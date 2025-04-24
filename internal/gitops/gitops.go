@@ -6,11 +6,12 @@ import (
 	"slices"
 
 	"github.com/korbiniankuhn/gitops-compose/internal/deployment"
+	"github.com/korbiniankuhn/gitops-compose/internal/docker"
 	"github.com/korbiniankuhn/gitops-compose/internal/git"
 	"github.com/korbiniankuhn/gitops-compose/internal/metrics"
 )
 
-func Check(r *git.DeploymentRepo, m *metrics.Metrics) {
+func Check(r *git.DeploymentRepo, d *docker.Docker, m *metrics.Metrics) {
     m.TrackLastCheckTime()
 
     hasChanges, err := r.HasChanges()
@@ -65,6 +66,14 @@ func Check(r *git.DeploymentRepo, m *metrics.Metrics) {
     activeFailed := 0
     removalFailed := 0
 
+    // Eventually login to docker registry
+    if err := d.LoginIfCredentialsSet(); err != nil {
+        slog.Error("error logging in to docker registry", "err", err.Error())
+        m.TrackErrorMetrics()
+        return
+    }
+    slog.Info("logged in to docker registry")
+
     // Stop removed deployments
     for _, d := range removedDeployments {
         if err := d.Stop(); err != nil {
@@ -86,6 +95,12 @@ func Check(r *git.DeploymentRepo, m *metrics.Metrics) {
 
     // Start added deployments
     for _, d := range addedDeployments {
+        if err := d.PullImages(); err != nil {
+            activeFailed++
+            m.TrackDeploymentErrorMetrics()
+            slog.Error("error preparing deployment", "err", err.Error())
+            continue
+        }
         if err := d.StopAndStart(); err != nil {
             activeFailed++
             m.TrackDeploymentErrorMetrics()
@@ -116,7 +131,7 @@ func Check(r *git.DeploymentRepo, m *metrics.Metrics) {
         }
 
         if hasChanged || !isRunning {
-            if err := d.PrepareStart(); err != nil {
+            if err := d.PullImages(); err != nil {
                 activeFailed++
                 m.TrackDeploymentErrorMetrics()
                 slog.Error("error preparing deployment", "err", err.Error())
@@ -147,4 +162,15 @@ func Check(r *git.DeploymentRepo, m *metrics.Metrics) {
 
     // Track active deployments
     m.TrackActiveDeployments(activeOk, activeFailed, removalFailed)
+
+    // Logout from docker registry
+    if err := d.LogoutIfCredentialsSet(); err != nil {
+        slog.Error("error logging out from docker registry", "err", err.Error())
+        m.TrackErrorMetrics()
+        return
+    }
+    slog.Info("logged out from docker registry")
+
+    // Track success metrics
+    m.TrackSuccessMetrics()
 }

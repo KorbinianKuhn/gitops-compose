@@ -63,7 +63,7 @@ func (d *Deployment) Stop() error {
 	return nil
 }
 
-func (d *Deployment) PrepareStart() error {
+func (d *Deployment) PullImages() error {
 	if !d.isValid {
 		return ErrInvalidComposeFile
 	}
