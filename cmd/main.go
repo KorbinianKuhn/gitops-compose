@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/korbiniankuhn/gitops-compose/internal/compose"
 	"github.com/korbiniankuhn/gitops-compose/internal/config"
 	"github.com/korbiniankuhn/gitops-compose/internal/docker"
 	"github.com/korbiniankuhn/gitops-compose/internal/git"
@@ -23,10 +24,6 @@ func main() {
         panic(err)
     }
     slog.Info("config loaded")
-
-    // TODO: check if docker socket is available
-    // TODO: check if docker-compose is available
-    // TODO: check if registry is available
 
     // Verify git repository
     r, err := git.NewDeploymentRepo(config.RepositoryUsername, config.RepositoryPassword, config.RepositoryPath)
@@ -53,6 +50,12 @@ func main() {
         slog.Info("docker credentials verified", "url", config.DockerRegistryUrl)
     }
 
+    // Verify docker compose cli
+    if err:= compose.VerifyComposeCli(); err != nil {
+        slog.Error("failed to verify docker compose cli", "error", err)
+        panic(err)
+    }
+    slog.Info("docker compose cli verified")
 
     // Initialise metrics
     m := metrics.NewMetrics()

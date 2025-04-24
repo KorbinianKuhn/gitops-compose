@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	ErrComposeCliNotWorking = fmt.Errorf("docker compose cli is not working")
 	ErrInvalidComposeFile = fmt.Errorf("invalid compose file")
 	ErrPullDryRunFailed = fmt.Errorf("pull dry run failed")
 	ErrPullFailed = fmt.Errorf("pull failed")
@@ -25,6 +26,18 @@ func NewComposeFile(filepath string) *ComposeFile {
 	return &ComposeFile{
 		Filepath: filepath,
 	}
+}
+
+func VerifyComposeCli() (error) {
+	cmd := exec.Command("docker", "compose", "version")
+	output, err := cmd.Output()
+	if err != nil {
+		return ErrComposeCliNotWorking
+	}
+	if bytes.Contains(output, []byte("Docker Compose")) {
+		return nil
+	}
+	return ErrComposeCliNotWorking
 }
 
 func (c ComposeFile) GetConfig() ([]byte, error) {
