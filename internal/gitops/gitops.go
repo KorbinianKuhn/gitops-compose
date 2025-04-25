@@ -11,166 +11,239 @@ import (
 	"github.com/korbiniankuhn/gitops-compose/internal/metrics"
 )
 
-func Check(r *git.DeploymentRepo, d *docker.Docker, m *metrics.Metrics) {
-    m.TrackLastCheckTime()
+type GitOps struct {
+    repo    *git.DeploymentRepo
+    docker  *docker.Docker
+    metrics *metrics.Metrics
+}
 
-    hasChanges, err := r.HasChanges()
+func NewGitOps(repo *git.DeploymentRepo, docker *docker.Docker, metrics *metrics.Metrics) *GitOps {
+    return &GitOps{
+        repo:    repo,
+        docker:  docker,
+        metrics: metrics,
+    }
+}
+
+func (g *GitOps) EnsureDeploymentsAreRunning() error {
+    // Check if there are any changes in the git repository
+    hasChanges, err := g.repo.HasChanges()
     if err != nil {
-        m.TrackErrorMetrics()
         slog.Error("error checking for changes", "err", err.Error())
-        return
+        return err
     }
 
+    // If there are changes, skip and let repeated check handle it
+    if hasChanges {
+        return err
+    }
+
+    // Get local compose files
+    composeFiles, err := g.repo.GetLocalComposeFiles()
+    if err != nil {
+        slog.Error("error getting local compose files", "err", err.Error())
+        return err
+    }
+
+    // Track deployment states
+    ok := 0
+    removed := 0
+    failed := 0
+    invalid := 0
+    defer func() {
+        g.metrics.TrackActiveDeployments(ok, removed, failed, invalid)
+    }()
+
+    // Ensure docker login if credentials are set
+    if err := g.docker.LoginIfCredentialsSet(); err != nil {
+        slog.Error("error logging in to docker registry", "err", err.Error())
+        return err
+    }
+    defer func() {
+        g.docker.LogoutIfCredentialsSet()
+    }()
+
+    // Ensure all deployments are running
+    for _, composeFile := range composeFiles {
+        d := deployment.NewDeployment(composeFile, deployment.Unchanged)
+
+        wasStarted, err := d.Apply()
+        if err == deployment.ErrInvalidComposeFile {
+            invalid++
+            g.metrics.TrackDeploymentOperation("config", "error")
+            slog.Error("invalid compose file", "file", d.Filepath)
+        } else if err != nil {
+            failed++
+            g.metrics.TrackDeploymentOperation("start", "error")
+            slog.Error("error starting deployment", "file", d.Filepath, "err", err.Error())
+        } else if wasStarted {
+            ok++
+            g.metrics.TrackDeploymentOperation("start", "success")
+            slog.Info("started deployment", "file", d.Filepath)
+        } else {
+            ok++
+            slog.Info("deployment is already running", "file", d.Filepath)
+        }
+    }
+
+    return nil
+}
+
+func (g *GitOps) CheckAndUpdateDeployments() error {
+    // Check if there are any changes in the git repository
+    hasChanges, err := g.repo.HasChanges()
+    if err != nil {
+        slog.Error("error checking for changes", "err", err.Error())
+        return err
+    }
+
+    // If there are no changes, return
     if !hasChanges {
-        m.TrackSuccessMetrics()
-        slog.Info("no changes to pull")
-        return
+        return nil
     }
 
     slog.Info("changes detected")
 
-    localComposeFiles, err := r.GetLocalComposeFiles()
+    // Get local and remote compose files
+    localComposeFiles, err := g.repo.GetLocalComposeFiles()
     if err != nil {
-        m.TrackErrorMetrics()
         slog.Error("error getting local compose files", "err", err.Error())
-        return
+        return err
     }
 
-    remoteComposeFiles, err := r.GetRemoteComposeFiles()
+    remoteComposeFiles, err := g.repo.GetRemoteComposeFiles()
     if err != nil {
-        m.TrackErrorMetrics()
         slog.Error("error getting remote compose files", "err", err.Error())
-        return
+        return err
     }
 
-    activeDeployments := []deployment.Deployment{}
-    removedDeployments := []deployment.Deployment{}
+    // Determine which deployments to add, remove, or update
+    deployments := []deployment.Deployment{}
     for _, localFile := range localComposeFiles {
-        d := deployment.NewDeployment(localFile)
         if slices.Contains(remoteComposeFiles, localFile) {
-            activeDeployments = append(activeDeployments, *d)
+            deployments = append(deployments, *deployment.NewDeployment(localFile, deployment.Unchanged))
         } else {
-            removedDeployments = append(removedDeployments, *d)
+            deployments = append(deployments, *deployment.NewDeployment(localFile, deployment.Removed))
         }
     }
-    addedDeployments := []deployment.Deployment{}
     for _, remoteFile := range remoteComposeFiles {
         if !slices.Contains(localComposeFiles, remoteFile) {
-            d := deployment.NewDeployment(remoteFile)
-            addedDeployments = append(addedDeployments, *d)
+            deployments = append(deployments, *deployment.NewDeployment(remoteFile, deployment.Added))
         }
     }
 
-    // Metrics counter variables
-    activeOk := 0
-    activeFailed := 0
-    removalFailed := 0
+    // Track deployment states
+    ok := 0
+    failed := 0
+    invalid := 0
+    removed := 0
+    defer func() {
+        g.metrics.TrackActiveDeployments(ok, removed, failed, invalid)
+    }()
 
-    // Eventually login to docker registry
-    if err := d.LoginIfCredentialsSet(); err != nil {
+    // Ensure docker login if credentials are set
+    if err := g.docker.LoginIfCredentialsSet(); err != nil {
         slog.Error("error logging in to docker registry", "err", err.Error())
-        m.TrackErrorMetrics()
-        return
+        return err
     }
-    slog.Info("logged in to docker registry")
+    defer func() {
+        g.docker.LogoutIfCredentialsSet()
+    }()
 
     // Stop removed deployments
-    for _, d := range removedDeployments {
-        if err := d.Stop(); err != nil {
-            removalFailed++
-            m.TrackDeploymentErrorMetrics()
-            slog.Error("error stopping removed deployment", "err", err.Error())
-            continue
+    for _, d := range deployments {
+        if d.State == deployment.Removed {
+            wasStopped, err := d.Apply()
+            if err == deployment.ErrInvalidComposeFile {
+                invalid++
+                g.metrics.TrackDeploymentOperation("config", "error")
+                slog.Error("cannot stop removed deployment due to invalid compose file", "file", d.Filepath)
+            } else if err != nil {
+                failed++
+                g.metrics.TrackDeploymentOperation("stop", "error")
+                slog.Error("error stopping removed deployment", "file", d.Filepath, "err", err.Error())
+            } else {
+                removed++
+                if wasStopped {
+                    g.metrics.TrackDeploymentOperation("stop", "success")
+                }
+                slog.Info("stopped removed deployment", "file", d.Filepath)
+            }
         }
-        m.TrackDeploymentSuccessMetrics()
-        slog.Info("stopped removed deployment", "file", d.Filepath)
     }
 
     // Pull Git changes
-    if err := r.Pull(); err != nil {
+    if err := g.repo.Pull(); err != nil {
         slog.Error("error pulling changes", "err", err.Error())
-        m.TrackErrorMetrics()
-        return
+        return err
     }
 
-    // Start added deployments
-    for _, d := range addedDeployments {
-        if err := d.PullImages(); err != nil {
-            activeFailed++
-            m.TrackDeploymentErrorMetrics()
-            slog.Error("error preparing deployment", "err", err.Error())
-            continue
+    // Update deployment states (check if compose files are valid and if they changed)
+    for _, d := range deployments {
+        if d.State != deployment.Removed {
+            d.UpdateState()
         }
-        if err := d.StopAndStart(); err != nil {
-            activeFailed++
-            m.TrackDeploymentErrorMetrics()
-            slog.Error("error starting deployment", "err", err.Error())
-            continue
-        }
-        activeOk++
-        m.TrackDeploymentSuccessMetrics()
-        slog.Info("started new deployment", "file", d.Filepath)
     }
 
-    // Update changed deployments
-    for _, d := range activeDeployments {
-        hasChanged, err := d.HasChanged()
-        if err != nil {
-            activeFailed++
-            m.TrackDeploymentErrorMetrics()
-            slog.Error("error checking if deployment has changed", "err", err.Error())
-            continue
-        }
-
-        isRunning, err := d.IsRunning()
-        if err != nil {
-            activeFailed++
-            m.TrackDeploymentErrorMetrics()
-            slog.Error("error checking if deployment is running", "err", err.Error())
-            continue
-        }
-
-        if hasChanged || !isRunning {
-            if err := d.PullImages(); err != nil {
-                activeFailed++
-                m.TrackDeploymentErrorMetrics()
-                slog.Error("error preparing deployment", "err", err.Error())
-                continue
-            }
-            if err := d.StopAndStart(); err != nil {
-                activeFailed++
-                m.TrackDeploymentErrorMetrics()
-                if hasChanged {
-                    slog.Error("error updating deployment", "err", err.Error())
+    // Update deployments
+    for _, d := range deployments {
+        switch d.State {
+            case deployment.Added: {
+                wasStarted, err := d.Apply()
+                if err == deployment.ErrInvalidComposeFile {
+                    invalid++
+                    g.metrics.TrackDeploymentOperation("config", "error")
+                    slog.Error("cannot start new deployment due to invalid compose file", "file", d.Filepath)
+                } else if err != nil {
+                    failed++
+                    g.metrics.TrackDeploymentOperation("start", "error")
+                    slog.Error("error starting new deployment", "file", d.Filepath, "err", err.Error())
                 } else {
-                    slog.Error("error starting deployment", "err", err.Error())
+                    ok++
+                    if (wasStarted) {
+                        g.metrics.TrackDeploymentOperation("start", "success")
+                    }
+                    slog.Info("started new deployment", "file", d.Filepath)
                 }
-                continue
             }
-
-            if hasChanged {
-                m.TrackDeploymentSuccessMetrics()
-                slog.Info("updated deployment", "file", d.Filepath)
-            } else {
-                m.TrackDeploymentSuccessMetrics()
-                slog.Info("started deployment", "file", d.Filepath)
+            case deployment.Updated: {
+                wasStarted, err := d.Apply()
+                if err == deployment.ErrInvalidComposeFile {
+                    invalid++
+                    g.metrics.TrackDeploymentOperation("config", "error")
+                    slog.Error("cannot update deployment due to invalid compose file", "file", d.Filepath)
+                } else if err != nil {
+                    failed++
+                    g.metrics.TrackDeploymentOperation("start", "error")
+                    slog.Error("error updating deployment", "file", d.Filepath, "err", err.Error())
+                } else {
+                    ok++
+                    if (wasStarted) {
+                        g.metrics.TrackDeploymentOperation("start", "success")
+                    }
+                    slog.Info("updated deployment", "file", d.Filepath)
+                }
+            }
+            case deployment.Unchanged: {
+                wasStarted, err := d.Apply()
+                if err == deployment.ErrInvalidComposeFile {
+                    invalid++
+                    g.metrics.TrackDeploymentOperation("config", "error")
+                    slog.Error("cannot check deployment due to invalid compose file", "file", d.Filepath)
+                } else if err != nil {
+                    failed++
+                    g.metrics.TrackDeploymentOperation("start", "error")
+                    slog.Error("error checking unchanged deployment", "file", d.Filepath, "err", err.Error())
+                } else {
+                    if (wasStarted) {
+                        g.metrics.TrackDeploymentOperation("start", "success")
+                        slog.Info("started unchanged but not running deployment", "file", d.Filepath)
+                    }
+                    ok++
+                }
             }
         }
-
-        activeOk++
     }
 
-    // Track active deployments
-    m.TrackActiveDeployments(activeOk, activeFailed, removalFailed)
-
-    // Logout from docker registry
-    if err := d.LogoutIfCredentialsSet(); err != nil {
-        slog.Error("error logging out from docker registry", "err", err.Error())
-        m.TrackErrorMetrics()
-        return
-    }
-    slog.Info("logged out from docker registry")
-
-    // Track success metrics
-    m.TrackSuccessMetrics()
+    return nil
 }

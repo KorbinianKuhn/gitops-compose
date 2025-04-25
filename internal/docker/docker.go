@@ -5,15 +5,11 @@ import (
 	"os/exec"
 )
 
-var (
-	ErrLoginFailed = fmt.Errorf("docker login failed")
-	ErrLogoutFailed = fmt.Errorf("docker logout failed")
-)
-
 type Docker struct {
 	url string
 	username string
 	password string
+	isLoggedIn bool
 }
 
 func NewDocker(url, username, password string) *Docker {
@@ -21,6 +17,7 @@ func NewDocker(url, username, password string) *Docker {
 		url: url,
 		username: username,
 		password: password,
+		isLoggedIn: false,
 	}
 }
 
@@ -39,19 +36,27 @@ func (d Docker) AreCredentialsSet() bool {
 	return false
 }
 
-func (d Docker) login() error {
+func (d *Docker) login() error {
+	if d.isLoggedIn {
+		return nil
+	}
 	cmd := exec.Command("docker", "login", d.url, "-u", d.username, "-p", d.password)
 	if err := cmd.Run(); err != nil {
-		return ErrLoginFailed
+		return fmt.Errorf("docker login failed: %w", err)
 	}
+	d.isLoggedIn = true
 	return nil
 }
 
-func (Docker) logout() error {
+func (d *Docker) logout() error {
+	if !d.isLoggedIn {
+		return nil
+	}
 	cmd := exec.Command("docker", "logout")
 	if err := cmd.Run(); err != nil {
-		return ErrLogoutFailed
+		return fmt.Errorf("docker logout failed: %w", err)
 	}
+	d.isLoggedIn = false
 	return nil
 }
 

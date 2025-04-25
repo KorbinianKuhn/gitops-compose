@@ -59,18 +59,41 @@ func main() {
 
     // Initialise metrics
     m := metrics.NewMetrics()
-    m.TrackActiveDeployments(0,0,0)
+
+    // Initialise gitops
+    g := gitops.NewGitOps(r, d, m)
+    
+    if err := g.EnsureDeploymentsAreRunning(); err != nil {
+        m.TrackCheckStatus("error")
+        slog.Error("failed to ensure deployments are running on initial start", "error", err)
+    } else {
+        m.TrackCheckStatus("success")
+    }
 
     slog.Info("starting gitops repeated pull")
     go func() {
         for {
-            gitops.Check(r, d, m)
+            if err := g.CheckAndUpdateDeployments(); err != nil {
+                m.TrackCheckStatus("error")
+            } else {
+                m.TrackCheckStatus("success")
+            }
             time.Sleep(time.Duration(config.CheckIntervalInSeconds) * time.Second)
         }
     }()
 
+    http.Handle("/metrics", m.GetMetricsHandler())
+
+    // http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
+    //     // TODO: check access token
+    //     w.WriteHeader(http.StatusAccepted)
+    //     w.Write([]byte("Check triggered"))
+    // })
+    
+    if err := http.ListenAndServe(":2112", nil); err != nil {
+        slog.Error("failed to start metrics server", "error", err)
+        panic(err)
+    }
+
     slog.Info("starting metrics server", "port", "2112")
-    handler := m.GetMetricsHandler()
-    http.Handle("/metrics", handler)
-    http.ListenAndServe(":2112", nil)
 }

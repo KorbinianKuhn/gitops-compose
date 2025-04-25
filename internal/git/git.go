@@ -13,18 +13,7 @@ import (
 
 var (
 	ErrPathDoesNotExist = fmt.Errorf("path does not exist")
-	ErrNotAGitRepo = fmt.Errorf("not a git repository")
-	ErrOpenRepoFailed = fmt.Errorf("open repo failed")
-	ErrGetWorktreeFailed = fmt.Errorf("get worktree failed")
-	ErrGetStatusFailed = fmt.Errorf("get status failed")
 	ErrHasLocalChanges = fmt.Errorf("local changes detected")
-	ErrFetchFailed = fmt.Errorf("fetch failed")
-	ErrGetLocalRefFailed = fmt.Errorf("get local ref failed")
-	ErrGetRemoteRefFailed = fmt.Errorf("get remote ref failed")
-	ErrGetCommitObjectFailed = fmt.Errorf("get commit object failed")
-	ErrGetTreeFailed = fmt.Errorf("get tree failed")
-	ErrWalkTreeFailed = fmt.Errorf("walk tree failed")
-	ErrPullFailed = fmt.Errorf("pull failed")
 )
 
 type DeploymentRepo struct {
@@ -39,7 +28,7 @@ func NewDeploymentRepo(username, password, path string) (*DeploymentRepo, error)
 
 	_, err := gogit.PlainOpen(path)
 	if err != nil {
-		return nil, ErrNotAGitRepo
+		return nil, fmt.Errorf("open repo failed: %w", err)
 	}
 
 	return &DeploymentRepo{
@@ -55,19 +44,19 @@ func (r DeploymentRepo) HasChanges() (bool, error) {
 	// Open the repository
 	repo, err := gogit.PlainOpen(r.path)
 	if err != nil {
-		return false, ErrOpenRepoFailed
+		return false, fmt.Errorf("open repo failed: %w", err)
 	}
 
 	// Get the working tree
 	worktree, err := repo.Worktree()
 	if err != nil {
-		return false, ErrGetWorktreeFailed
+		return false, fmt.Errorf("get worktree failed: %w", err)
 	}
 
 	// Check if the working tree is clean
 	status, err := worktree.Status()
 	if err != nil {
-		return false, ErrGetStatusFailed
+		return false, fmt.Errorf("get status failed: %w", err)
 	}
 
 	// If there are changes, we cannot savely proceed
@@ -86,19 +75,19 @@ func (r DeploymentRepo) HasChanges() (bool, error) {
 		if (err == gogit.NoErrAlreadyUpToDate) {
 			return false, nil
 		}
-		return false, ErrFetchFailed
+		return false, fmt.Errorf("fetch failed: %w", err)
 	}
 
 	// Get the local references for the main branch
     localRef, err := repo.Reference(plumbing.ReferenceName("refs/heads/main"), true)
 	if err != nil {
-		return false, ErrGetLocalRefFailed
+		return false, fmt.Errorf("get local ref failed: %w", err)
 	}
 
 	// Get the remote references for the main branch
     remoteRef, err := repo.Reference(plumbing.ReferenceName("refs/remotes/origin/main"), true)
 	if err != nil {
-		return false, ErrGetRemoteRefFailed
+		return false, fmt.Errorf("get remote ref failed: %w", err)
 	}
 
 	// Compare the hashes of the local and remote references
@@ -113,7 +102,7 @@ func (r DeploymentRepo) filterComposeFiles(c object.Commit) ([]string, error) {
 	// Get the tree of the commit
 	tree, err := c.Tree()
 	if err != nil {
-		return nil, ErrGetTreeFailed
+		return nil, fmt.Errorf("get tree failed: %w", err)
 	}
 
     // Iterate through the files in the tree
@@ -127,7 +116,7 @@ func (r DeploymentRepo) filterComposeFiles(c object.Commit) ([]string, error) {
 		return nil
     })
     if err != nil {
-        return nil, ErrWalkTreeFailed
+        return nil, fmt.Errorf("walk tree failed: %w", err)
     }
 	
 	return composeFiles, nil
@@ -137,19 +126,19 @@ func (r DeploymentRepo) GetRemoteComposeFiles() ([]string, error) {
 	// Open the repository
 	repo, err := gogit.PlainOpen(r.path)
 	if err != nil {
-		return nil, ErrOpenRepoFailed
+		return nil, fmt.Errorf("open repo failed: %w", err)
 	}
 
 	// Get the remote references for the main branch
 	ref, err := repo.Reference(plumbing.ReferenceName("refs/remotes/origin/main"), true)
 	if err != nil {
-		return nil, ErrGetRemoteRefFailed
+		return nil, fmt.Errorf("get remote ref failed: %w", err)
 	}
 
 	// Get the latest commit from the remote main branch
 	commit, err := repo.CommitObject(ref.Hash())
 	if err != nil {
-		return nil, ErrGetCommitObjectFailed
+		return nil, fmt.Errorf("get commit object failed: %w", err)
 	}
 
 	return r.filterComposeFiles(*commit)
@@ -159,19 +148,19 @@ func (r DeploymentRepo) GetLocalComposeFiles() ([]string, error) {
 	// Open the repository
 	repo, err := gogit.PlainOpen(r.path)
 	if err != nil {
-		return nil, ErrOpenRepoFailed
+		return nil, fmt.Errorf("open repo failed: %w", err)
 	}
 
 	// Get the local references for the main branch
 	ref, err := repo.Reference(plumbing.ReferenceName("refs/heads/main"), true)
 	if err != nil {
-		return nil, ErrGetLocalRefFailed
+		return nil, fmt.Errorf("get local ref failed: %w", err)
 	}
 
 	// Get the latest commit from the local main branch
 	commit, err := repo.CommitObject(ref.Hash())
 	if err != nil {
-		return nil, ErrGetCommitObjectFailed
+		return nil, fmt.Errorf("get commit object failed: %w", err)
 	}
 
 	return r.filterComposeFiles(*commit)
@@ -181,13 +170,13 @@ func (r DeploymentRepo) Pull() (error) {
 	// Open the repository
 	repo, err := gogit.PlainOpen(r.path)
 	if err != nil {
-		return ErrOpenRepoFailed
+		return fmt.Errorf("open repo failed: %w", err)
 	}
 
 	// Get the working tree
 	w, err := repo.Worktree()
 	if err != nil {
-		return ErrGetWorktreeFailed
+		return fmt.Errorf("get worktree failed: %w", err)
 	}
 
 	// Pull the latest changes from the remote repository
@@ -200,7 +189,7 @@ func (r DeploymentRepo) Pull() (error) {
 		if err == gogit.NoErrAlreadyUpToDate {
 			return nil
 		}
-		return ErrPullFailed
+		return fmt.Errorf("pull failed: %w", err)
 	}
 
 	return nil
