@@ -46,12 +46,14 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
     }
 
     // Track deployment states
-    ok := 0
-    removed := 0
+    unchanged := 0
+    started := 0
+    stopped := 0
+    updated := 0
     failed := 0
     invalid := 0
     defer func() {
-        g.metrics.TrackActiveDeployments(ok, removed, failed, invalid)
+        g.metrics.TrackDeploymentState(unchanged, started, stopped, updated, failed, invalid)
     }()
 
     // Ensure docker login if credentials are set
@@ -70,19 +72,15 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
         wasStarted, err := d.Apply()
         if err == deployment.ErrInvalidComposeFile {
             invalid++
-            g.metrics.TrackDeploymentOperation("config", "error")
             slog.Error("invalid compose file", "file", d.Filepath)
         } else if err != nil {
             failed++
-            g.metrics.TrackDeploymentOperation("start", "error")
             slog.Error("error starting deployment", "file", d.Filepath, "err", err.Error())
         } else if wasStarted {
-            ok++
-            g.metrics.TrackDeploymentOperation("start", "success")
+            started++
             slog.Info("started deployment", "file", d.Filepath)
         } else {
-            ok++
-            slog.Info("deployment is already running", "file", d.Filepath)
+            unchanged++
         }
     }
 
@@ -133,12 +131,14 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
     }
 
     // Track deployment states
-    ok := 0
+    unchanged := 0
+    started := 0
+    stopped := 0
+    updated := 0
     failed := 0
     invalid := 0
-    removed := 0
     defer func() {
-        g.metrics.TrackActiveDeployments(ok, removed, failed, invalid)
+        g.metrics.TrackDeploymentState(unchanged, started, stopped, updated, failed, invalid)
     }()
 
     // Ensure docker login if credentials are set
@@ -156,18 +156,16 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
             wasStopped, err := d.Apply()
             if err == deployment.ErrInvalidComposeFile {
                 invalid++
-                g.metrics.TrackDeploymentOperation("config", "error")
                 slog.Error("cannot stop removed deployment due to invalid compose file", "file", d.Filepath)
             } else if err != nil {
                 failed++
-                g.metrics.TrackDeploymentOperation("stop", "error")
                 slog.Error("error stopping removed deployment", "file", d.Filepath, "err", err.Error())
-            } else {
-                removed++
-                if wasStopped {
-                    g.metrics.TrackDeploymentOperation("stop", "success")
-                }
+            } else if wasStopped {
+                stopped++
                 slog.Info("stopped removed deployment", "file", d.Filepath)
+            } else {
+                unchanged++
+                slog.Warn("removed deployment was not running", "file", d.Filepath)
             }
         }
     }
@@ -192,55 +190,50 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
                 wasStarted, err := d.Apply()
                 if err == deployment.ErrInvalidComposeFile {
                     invalid++
-                    g.metrics.TrackDeploymentOperation("config", "error")
                     slog.Error("cannot start new deployment due to invalid compose file", "file", d.Filepath)
                 } else if err != nil {
                     failed++
-                    g.metrics.TrackDeploymentOperation("start", "error")
                     slog.Error("error starting new deployment", "file", d.Filepath, "err", err.Error())
-                } else {
-                    ok++
-                    if (wasStarted) {
-                        g.metrics.TrackDeploymentOperation("start", "success")
-                    }
+                } else if wasStarted {
+                    started++
                     slog.Info("started new deployment", "file", d.Filepath)
+                } else {
+                    // This case should not happen, but just in case
+                    unchanged++
+                    slog.Warn("new deployment was already running", "file", d.Filepath)
                 }
             }
             case deployment.Updated: {
                 wasStarted, err := d.Apply()
                 if err == deployment.ErrInvalidComposeFile {
                     invalid++
-                    g.metrics.TrackDeploymentOperation("config", "error")
                     slog.Error("cannot update deployment due to invalid compose file", "file", d.Filepath)
                 } else if err != nil {
                     failed++
-                    g.metrics.TrackDeploymentOperation("start", "error")
                     slog.Error("error updating deployment", "file", d.Filepath, "err", err.Error())
-                } else {
-                    ok++
-                    if (wasStarted) {
-                        g.metrics.TrackDeploymentOperation("start", "success")
-                    }
+                } else if wasStarted {
+                    updated++
                     slog.Info("updated deployment", "file", d.Filepath)
+                } else {
+                    // This case should not happen, but just in case
+                    unchanged++
+                    slog.Warn("updated deployment was already running", "file", d.Filepath)
                 }
             }
             case deployment.Unchanged: {
                 wasStarted, err := d.Apply()
                 if err == deployment.ErrInvalidComposeFile {
                     invalid++
-                    g.metrics.TrackDeploymentOperation("config", "error")
                     slog.Error("cannot check deployment due to invalid compose file", "file", d.Filepath)
                 } else if err != nil {
                     failed++
-                    g.metrics.TrackDeploymentOperation("start", "error")
                     slog.Error("error checking unchanged deployment", "file", d.Filepath, "err", err.Error())
-                } else {
-                    if (wasStarted) {
-                        g.metrics.TrackDeploymentOperation("start", "success")
-                        slog.Info("started unchanged but not running deployment", "file", d.Filepath)
-                    }
-                    ok++
-                }
+                } else if wasStarted {
+                    started++
+                    slog.Warn("started unchanged but not running deployment", "file", d.Filepath)
+                 } else {
+                    unchanged++
+                 }
             }
         }
     }

@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"log/slog"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -11,6 +10,7 @@ import (
 type Metrics struct {
     checkTimestamp *prometheus.GaugeVec
     checkCounter *prometheus.CounterVec
+    deploymentTimestamp *prometheus.GaugeVec
     activeDeploymentsGauge *prometheus.GaugeVec
     deploymentOperationsCounter *prometheus.CounterVec
 }
@@ -35,6 +35,15 @@ func NewMetrics() *Metrics {
             },
             []string{"status"},
         ),
+        deploymentTimestamp: prometheus.NewGaugeVec(
+            prometheus.GaugeOpts{
+                Namespace: "gitops",
+                Subsystem: "deployments",
+                Name: "change_timestamp_seconds",
+                Help: "Unix timestamp of the last deployment change by status",
+            },
+            []string{"status"},
+        ),
         activeDeploymentsGauge: prometheus.NewGaugeVec(
             prometheus.GaugeOpts{
                 Namespace: "gitops",
@@ -51,7 +60,7 @@ func NewMetrics() *Metrics {
                 Name:      "operations_total",
                 Help:      "Total number of deployment operations.",
             },
-            []string{"operation", "result"},
+            []string{"operation"},
         ),
     }
 
@@ -60,17 +69,18 @@ func NewMetrics() *Metrics {
     metrics.checkCounter.WithLabelValues("error").Add(0)
     metrics.checkTimestamp.WithLabelValues("error").Set(0)
 
-    metrics.activeDeploymentsGauge.WithLabelValues("ok").Add(0)
-    metrics.activeDeploymentsGauge.WithLabelValues("removed").Add(0)
+    metrics.deploymentTimestamp.WithLabelValues("success").Set(0)
+    metrics.deploymentTimestamp.WithLabelValues("error").Set(0)
+
+    metrics.activeDeploymentsGauge.WithLabelValues("running").Add(0)
     metrics.activeDeploymentsGauge.WithLabelValues("failed").Add(0)
     metrics.activeDeploymentsGauge.WithLabelValues("invalid").Add(0)
 
-    metrics.deploymentOperationsCounter.WithLabelValues("start", "success").Add(0)
-    metrics.deploymentOperationsCounter.WithLabelValues("start", "error").Add(0)
-    metrics.deploymentOperationsCounter.WithLabelValues("config", "success").Add(0)
-    metrics.deploymentOperationsCounter.WithLabelValues("config", "error").Add(0)
-    metrics.deploymentOperationsCounter.WithLabelValues("stop", "success").Add(0)
-    metrics.deploymentOperationsCounter.WithLabelValues("stop", "error").Add(0)
+    metrics.deploymentOperationsCounter.WithLabelValues("started").Add(0)
+    metrics.deploymentOperationsCounter.WithLabelValues("stopped").Add(0)
+    metrics.deploymentOperationsCounter.WithLabelValues("updated").Add(0)
+    metrics.deploymentOperationsCounter.WithLabelValues("failed").Add(0)
+    metrics.deploymentOperationsCounter.WithLabelValues("invalid").Add(0)
 
     return metrics
 }
@@ -80,17 +90,26 @@ func (c *Metrics) TrackCheckStatus(status string) {
     c.checkTimestamp.WithLabelValues(status).SetToCurrentTime()
 }
 
-func (c *Metrics) TrackActiveDeployments(ok, removed, failed, invalid int) {
-    slog.Info("Tracking active deployments", "ok", ok, "removed", removed, "failed", failed, "invalid", invalid)
-    c.activeDeploymentsGauge.WithLabelValues("ok").Set(float64(ok))
-    c.activeDeploymentsGauge.WithLabelValues("removed").Set(float64(removed))
+func (c *Metrics) TrackDeploymentState(unchanged, started, stopped, updated, failed, invalid int) {
+    // Timestamps
+    if failed + invalid > 0 {
+        c.deploymentTimestamp.WithLabelValues("error").SetToCurrentTime()
+    } else if (started + stopped + updated) > 0 {
+        c.deploymentTimestamp.WithLabelValues("success").SetToCurrentTime()
+    }
+
+    // Active states
+    running := unchanged + started + stopped + updated
+    c.activeDeploymentsGauge.WithLabelValues("running").Set(float64(running))
     c.activeDeploymentsGauge.WithLabelValues("failed").Set(float64(failed))
     c.activeDeploymentsGauge.WithLabelValues("invalid").Set(float64(invalid))
-}
 
-func (c *Metrics) TrackDeploymentOperation(operation, result string) {
-    slog.Info("Tracking deployment operation", "operation", operation, "result", result)
-    c.deploymentOperationsCounter.WithLabelValues(operation, result).Inc()
+    // Operations
+    c.deploymentOperationsCounter.WithLabelValues("started").Add(float64(started))
+    c.deploymentOperationsCounter.WithLabelValues("stopped").Add(float64(stopped))
+    c.deploymentOperationsCounter.WithLabelValues("updated").Add(float64(updated))
+    c.deploymentOperationsCounter.WithLabelValues("failed").Add(float64(failed))
+    c.deploymentOperationsCounter.WithLabelValues("invalid").Add(float64(invalid))
 }
 
 func (c *Metrics) GetMetricsHandler() http.Handler {
@@ -99,6 +118,7 @@ func (c *Metrics) GetMetricsHandler() http.Handler {
 	r.MustRegister(
         c.checkTimestamp,
         c.checkCounter,
+        c.deploymentTimestamp,
         c.activeDeploymentsGauge,
         c.deploymentOperationsCounter,
 	)
