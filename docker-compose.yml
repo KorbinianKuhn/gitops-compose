@@ -2,7 +2,7 @@ services:
   gitops:
     build: .
     ports:
-      - 2112:2112
+      - 127.0.0.1:2112:2112
     environment:
       CHECK_INTERVAL_IN_SECONDS: 5
       REPOSITORY_PATH: /repository
@@ -13,4 +13,4 @@ services:
       DOCKER_REGISTRY_PASSWORD: ${DOCKER_REGISTRY_PASSWORD}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./test-repos/deployments:/repository
+      - ./test-repos/temp-deployment:/repository

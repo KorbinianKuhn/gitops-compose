@@ -23,8 +23,9 @@ func NewDocker(url, username, password string) *Docker {
 
 func (Docker) VerifySocketConnection() error {
 	cmd := exec.Command("docker", "info")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker socket connection failed: %w", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker socket connection failed: %w %s", err, output)
 	}
 	return nil
 }
@@ -41,8 +42,9 @@ func (d *Docker) login() error {
 		return nil
 	}
 	cmd := exec.Command("docker", "login", d.url, "-u", d.username, "-p", d.password)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker login failed: %w", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker login failed: %w %s", err, output)
 	}
 	d.isLoggedIn = true
 	return nil
@@ -53,8 +55,9 @@ func (d *Docker) logout() error {
 		return nil
 	}
 	cmd := exec.Command("docker", "logout")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker logout failed: %w", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker logout failed: %w %s", err, output)
 	}
 	d.isLoggedIn = false
 	return nil
