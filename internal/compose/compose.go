@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -38,14 +39,22 @@ func (c ComposeFile) LoadProject() (types.Project, error) {
 	ctx := context.Background()
 
 	workingDirectory := path.Dir(c.Filepath)
+	optionsFns := []cli.ProjectOptionsFn{
+		cli.WithWorkingDirectory(workingDirectory),
+		cli.WithInterpolation(true),
+		cli.WithResolvedPaths(true),
+	}
+	
+	envFilePath := filepath.Join(workingDirectory, ".env")
+	if _, err := os.Stat(envFilePath); err == nil {
+		optionsFns = append(optionsFns, cli.WithEnvFiles(envFilePath), cli.WithDotEnv)
+	}
+
+	optionsFns = append(optionsFns, cli.WithInterpolation(true), cli.WithResolvedPaths(true))
 
 	options, err := cli.NewProjectOptions(
 		[]string{c.Filepath},
-		cli.WithWorkingDirectory(workingDirectory),
-		cli.WithEnvFiles(filepath.Join(workingDirectory, ".env")),
-		cli.WithDotEnv,
-		cli.WithInterpolation(true),
-		cli.WithResolvedPaths(true),
+		optionsFns...,
 	)
 	if err != nil {
 		return types.Project{}, fmt.Errorf("failed to create project options: %w", err)

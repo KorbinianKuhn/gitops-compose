@@ -127,9 +127,6 @@ func (s *DeploymentState) CountRunning() int {
 }
 
 func (c *Metrics) TrackDeploymentState(state *DeploymentState) {
-    print(state.Unchanged)
-    print(state.CountRunning())
-
     // Timestamps
     if state.HasErrors() {
         c.deploymentTimestamp.WithLabelValues("error").SetToCurrentTime()
