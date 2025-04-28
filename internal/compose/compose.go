@@ -2,10 +2,12 @@ package compose
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"fmt"
 	"os/exec"
+
+	"github.com/compose-spec/compose-go/v2/cli"
+	"github.com/compose-spec/compose-go/v2/types"
 )
 
 type ComposeFile struct {
@@ -30,23 +32,24 @@ func VerifyComposeCli() (error) {
 	return fmt.Errorf("docker compose cli is not working: %w %s", err, output)
 }
 
-func (c ComposeFile) GetConfig() ([]byte, error) {
-	cmd := exec.Command("docker", "compose", "-f", c.Filepath, "config")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("invalid compose file: %w %s", err, output)
-	}
-	return output, nil
-}
+func (c ComposeFile) LoadProject() (types.Project, error) {
+	ctx := context.Background()
 
-func (c ComposeFile) GetConfigHash() (string, error) {
-	cmd := exec.Command("docker", "compose", "-f", c.Filepath, "config")
-	output, err := cmd.CombinedOutput()
+	options, err := cli.NewProjectOptions(
+		[]string{c.Filepath},
+		cli.WithOsEnv,
+		cli.WithDotEnv,
+	)
 	if err != nil {
-		return "", fmt.Errorf("invalid compose file: %w %s", err, output)
+		return types.Project{}, fmt.Errorf("failed to create project options: %w", err)
 	}
-	hash := sha256.Sum256(output)
-	return hex.EncodeToString(hash[:]), nil
+
+	project, err := options.LoadProject(ctx)
+	if err != nil {
+		return types.Project{}, fmt.Errorf("invalid compose file: %w", err)
+	}
+
+	return *project, nil
 }
 
 func (c ComposeFile) IsPullRequired() (bool, error) {
@@ -99,5 +102,18 @@ func (c ComposeFile) Start() error {
 	if err != nil {
 		return fmt.Errorf("docker compose up failed: %w %s", err, output)
 	}
+	return nil
+}
+
+func (c ComposeFile) StartWithDelay() (error) {
+	// Compose down + up with sleep
+	cmd := exec.Command("sh", "-c", `(sleep 5 && docker compose -f %s down && docker compose -f %s up -d) &`, c.Filepath, c.Filepath)
+
+	// Start the command but don't wait for it
+    err := cmd.Start()
+    if err != nil {
+        return fmt.Errorf("failed to schedule compose restart: %v", err)
+    }
+
 	return nil
 }

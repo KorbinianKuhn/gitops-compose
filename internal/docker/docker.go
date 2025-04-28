@@ -1,15 +1,17 @@
 package docker
 
 import (
+	"context"
 	"fmt"
-	"os/exec"
+
+	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/client"
 )
 
 type Docker struct {
 	url string
 	username string
 	password string
-	isLoggedIn bool
 }
 
 func NewDocker(url, username, password string) *Docker {
@@ -17,81 +19,53 @@ func NewDocker(url, username, password string) *Docker {
 		url: url,
 		username: username,
 		password: password,
-		isLoggedIn: false,
 	}
 }
 
-func (Docker) VerifySocketConnection() error {
-	cmd := exec.Command("docker", "info")
-	output, err := cmd.CombinedOutput()
+func (d Docker) getClient() (*client.Client, error) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		return fmt.Errorf("docker socket connection failed: %w %s", err, output)
+		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
-	return nil
+	return cli, nil
 }
 
-func (d Docker) AreCredentialsSet() bool {
-	if d.url != "" && d.username != "" && d.password != "" {
-		return true
-	}
-	return false
-}
-
-func (d *Docker) login() error {
-	if d.isLoggedIn {
-		return nil
-	}
-	cmd := exec.Command("docker", "login", d.url, "-u", d.username, "-p", d.password)
-	output, err := cmd.CombinedOutput()
+func (d Docker) VerifySocketConnection() error {
+	cli, err := d.getClient()
 	if err != nil {
-		return fmt.Errorf("docker login failed: %w %s", err, output)
+		return err
 	}
-	d.isLoggedIn = true
-	return nil
-}
+	defer cli.Close()
 
-func (d *Docker) logout() error {
-	if !d.isLoggedIn {
-		return nil
-	}
-	cmd := exec.Command("docker", "logout")
-	output, err := cmd.CombinedOutput()
+	_, err = cli.Ping(context.Background())
 	if err != nil {
-		return fmt.Errorf("docker logout failed: %w %s", err, output)
+		return fmt.Errorf("docker daemon is not reachable: %w", err)
 	}
-	d.isLoggedIn = false
+
 	return nil
 }
 
-func (d Docker) VerifyCredentialsIfSet() error {
-	if !d.AreCredentialsSet() {
-		return nil
+func (d Docker) LoginIfCredentialsSet() (bool, error) {
+	if d.url == "" {
+		return false, nil
 	}
-	if err := d.login(); err != nil {
-		return err
-	}
-	if err := d.logout(); err != nil {
-		return err
-	}
-	return nil
-}
 
-func (d Docker) LoginIfCredentialsSet() error {
-	if !d.AreCredentialsSet() {
-		return nil
+	cli, err := d.getClient()
+	if err != nil {
+		return false, err
 	}
-	if err := d.login(); err != nil {
-		return err
+	defer cli.Close()
+	
+	authConfig := registry.AuthConfig{
+		Username: d.username,
+		Password: d.password,
+		ServerAddress: d.url,
 	}
-	return nil
-}
 
-func (d Docker) LogoutIfCredentialsSet() error {
-	if !d.AreCredentialsSet() {
-		return nil
+	_, err = cli.RegistryLogin(context.Background(), authConfig)
+	if err != nil {
+		return false, fmt.Errorf("docker login failed: %w", err)
 	}
-	if err := d.logout(); err != nil {
-		return err
-	}
-	return nil
+
+	return true, nil
 }

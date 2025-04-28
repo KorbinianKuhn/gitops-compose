@@ -69,7 +69,8 @@ func (r DeploymentRepo) HasChanges() (bool, error) {
 		RemoteName: "origin",
         Auth: r.auth,
 		Tags: gogit.NoTags,
-		Force: true,
+		Force: false,
+		Prune: false,
 	})
 	if err != nil {
 		if (err == gogit.NoErrAlreadyUpToDate) {

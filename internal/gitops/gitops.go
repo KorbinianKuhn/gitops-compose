@@ -25,6 +25,74 @@ func NewGitOps(repo *git.DeploymentRepo, docker *docker.Docker, metrics *metrics
     }
 }
 
+func applyDeploymentChange(d deployment.Deployment, state metrics.DeploymentState) error {
+    wasChanged, err := d.Apply()
+
+    var operation string
+    switch d.State {
+        case deployment.Added:
+            operation = "start"
+        case deployment.Updated:
+            operation = "update"
+        case deployment.Removed:
+            operation = "remove"
+        case deployment.Unchanged:
+            operation = "unchanged"
+        default:
+            operation = "unknown"
+    }
+
+    if err == deployment.ErrInvalidComposeFile {
+        state.Invalid++
+        slog.Error("invalid compose file", "file", d.Filepath)
+    } else if err != nil {
+        state.Failed++
+        if d.State == deployment.Unchanged {
+            slog.Error("error checking unchanged deployment", "file", d.Filepath, "err", err.Error())
+        } else {
+            slog.Error("error applying deployment change", "file", d.Filepath, "operation", operation, "err", err.Error())
+        }
+    }
+
+    switch d.State {
+        case deployment.Added:
+            if wasChanged {
+                state.Started++
+                slog.Info("started new deployment", "file", d.Filepath)
+            } else {
+                // Should never happen
+                state.Unchanged++
+                slog.Warn("new deployment was already running", "file", d.Filepath)
+            }
+        case deployment.Updated:
+            if wasChanged {
+                state.Updated++
+                slog.Info("updated deployment", "file", d.Filepath)
+            } else {
+                // Should never happen
+                state.Unchanged++
+                slog.Warn("updated deployment was already running", "file", d.Filepath)
+            }
+        case deployment.Removed:
+            if wasChanged {
+                state.Stopped++
+                slog.Info("stopped removed deployment", "file", d.Filepath)
+            } else {
+                state.Unchanged++
+                slog.Warn("removed deployment was not running", "file", d.Filepath)
+            }
+        case deployment.Unchanged:
+            if wasChanged {
+                state.Started++
+                slog.Warn("started unchanged but not running deployment", "file", d.Filepath)
+            } else {
+                state.Unchanged++
+            }
+    }
+
+    return nil
+}
+
 func (g *GitOps) EnsureDeploymentsAreRunning() error {
     // Check if there are any changes in the git repository
     hasChanges, err := g.repo.HasChanges()
@@ -45,43 +113,31 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
         return err
     }
 
-    // Track deployment states
-    unchanged := 0
-    started := 0
-    stopped := 0
-    updated := 0
-    failed := 0
-    invalid := 0
-    defer func() {
-        g.metrics.TrackDeploymentState(unchanged, started, stopped, updated, failed, invalid)
-    }()
+    slog.Info("ensuring deployments are running", "files", composeFiles)
 
-    // Ensure docker login if credentials are set
-    if err := g.docker.LoginIfCredentialsSet(); err != nil {
-        slog.Error("error logging in to docker registry", "err", err.Error())
-        return err
-    }
+    // Track deployment states
+    state := metrics.NewState()
     defer func() {
-        g.docker.LogoutIfCredentialsSet()
+        g.metrics.TrackDeploymentState(state)
     }()
 
     // Ensure all deployments are running
     for _, composeFile := range composeFiles {
-        d := deployment.NewDeployment(composeFile, deployment.Unchanged)
+        d := deployment.NewDeployment(composeFile)
+        d.LoadConfig()
 
-        wasStarted, err := d.Apply()
-        if err == deployment.ErrInvalidComposeFile {
-            invalid++
-            slog.Error("invalid compose file", "file", d.Filepath)
-        } else if err != nil {
-            failed++
-            slog.Error("error starting deployment", "file", d.Filepath, "err", err.Error())
-        } else if wasStarted {
-            started++
-            slog.Info("started deployment", "file", d.Filepath)
-        } else {
-            unchanged++
+        if d.IsController() {
+            slog.Info("skipping controller deployment", "file", d.Filepath)
+            continue
         }
+
+        if d.IsIgnored() {
+            state.Ignored++
+            slog.Info("skipping deployment due to gitops ignore label", "file", d.Filepath)
+            continue
+        }
+
+        applyDeploymentChange(*d, state)
     }
 
     return nil
@@ -118,55 +174,41 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
     // Determine which deployments to add, remove, or update
     deployments := []deployment.Deployment{}
     for _, localFile := range localComposeFiles {
-        if slices.Contains(remoteComposeFiles, localFile) {
-            deployments = append(deployments, *deployment.NewDeployment(localFile, deployment.Unchanged))
-        } else {
-            deployments = append(deployments, *deployment.NewDeployment(localFile, deployment.Removed))
+        d := deployment.NewDeployment(localFile)
+        d.LoadConfig()
+        if !slices.Contains(remoteComposeFiles, localFile) {
+            d.State = deployment.Removed
         }
+        deployments = append(deployments, *d)
     }
     for _, remoteFile := range remoteComposeFiles {
         if !slices.Contains(localComposeFiles, remoteFile) {
-            deployments = append(deployments, *deployment.NewDeployment(remoteFile, deployment.Added))
+            d := deployment.NewDeployment(remoteFile)
+            d.State = deployment.Added
+            deployments = append(deployments, *d)
         }
     }
 
     // Track deployment states
-    unchanged := 0
-    started := 0
-    stopped := 0
-    updated := 0
-    failed := 0
-    invalid := 0
+    state := metrics.NewState()
     defer func() {
-        g.metrics.TrackDeploymentState(unchanged, started, stopped, updated, failed, invalid)
+        g.metrics.TrackDeploymentState(state)
     }()
 
     // Ensure docker login if credentials are set
-    if err := g.docker.LoginIfCredentialsSet(); err != nil {
+    _, err = g.docker.LoginIfCredentialsSet()
+    if err != nil {
         slog.Error("error logging in to docker registry", "err", err.Error())
         return err
     }
-    defer func() {
-        g.docker.LogoutIfCredentialsSet()
-    }()
 
     // Stop removed deployments
     for _, d := range deployments {
+        if d.IsIgnored() || d.IsController() {
+            continue
+        }
         if d.State == deployment.Removed {
-            wasStopped, err := d.Apply()
-            if err == deployment.ErrInvalidComposeFile {
-                invalid++
-                slog.Error("cannot stop removed deployment due to invalid compose file", "file", d.Filepath)
-            } else if err != nil {
-                failed++
-                slog.Error("error stopping removed deployment", "file", d.Filepath, "err", err.Error())
-            } else if wasStopped {
-                stopped++
-                slog.Info("stopped removed deployment", "file", d.Filepath)
-            } else {
-                unchanged++
-                slog.Warn("removed deployment was not running", "file", d.Filepath)
-            }
+            applyDeploymentChange(d, state)
         }
     }
 
@@ -179,61 +221,46 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
     // Update deployment states (check if compose files are valid and if they changed)
     for _, d := range deployments {
         if d.State != deployment.Removed {
-            d.UpdateState()
+            d.LoadConfig()
         }
     }
 
-    // Update deployments
+    // Update deployments (add, changed, unchanged)
     for _, d := range deployments {
-        switch d.State {
-            case deployment.Added: {
-                wasStarted, err := d.Apply()
-                if err == deployment.ErrInvalidComposeFile {
-                    invalid++
-                    slog.Error("cannot start new deployment due to invalid compose file", "file", d.Filepath)
-                } else if err != nil {
-                    failed++
-                    slog.Error("error starting new deployment", "file", d.Filepath, "err", err.Error())
-                } else if wasStarted {
-                    started++
-                    slog.Info("started new deployment", "file", d.Filepath)
-                } else {
-                    // This case should not happen, but just in case
-                    unchanged++
-                    slog.Warn("new deployment was already running", "file", d.Filepath)
-                }
+        if d.IsIgnored() || d.IsController() || d.State == deployment.Removed {
+            continue
+        }
+        applyDeploymentChange(d, state)
+    }
+
+    // Post deployment operations
+    for _, d := range deployments {
+        if d.IsIgnored() {
+            if d.State != deployment.Removed {
+                state.Ignored++;
+                slog.Info("skipping deployment due to gitops ignore label", "file", d.Filepath)
             }
-            case deployment.Updated: {
-                wasStarted, err := d.Apply()
-                if err == deployment.ErrInvalidComposeFile {
-                    invalid++
-                    slog.Error("cannot update deployment due to invalid compose file", "file", d.Filepath)
-                } else if err != nil {
-                    failed++
-                    slog.Error("error updating deployment", "file", d.Filepath, "err", err.Error())
-                } else if wasStarted {
-                    updated++
-                    slog.Info("updated deployment", "file", d.Filepath)
-                } else {
-                    // This case should not happen, but just in case
-                    unchanged++
-                    slog.Warn("updated deployment was already running", "file", d.Filepath)
+            continue
+        }
+        if d.IsController() {
+            switch d.State {
+                case deployment.Removed: {
+                    slog.Error("cannot remove controller deployment", "file", d.Filepath)
+                    state.Failed++
                 }
-            }
-            case deployment.Unchanged: {
-                wasStarted, err := d.Apply()
-                if err == deployment.ErrInvalidComposeFile {
-                    invalid++
-                    slog.Error("cannot check deployment due to invalid compose file", "file", d.Filepath)
-                } else if err != nil {
-                    failed++
-                    slog.Error("error checking unchanged deployment", "file", d.Filepath, "err", err.Error())
-                } else if wasStarted {
-                    started++
-                    slog.Warn("started unchanged but not running deployment", "file", d.Filepath)
-                 } else {
-                    unchanged++
-                 }
+                case deployment.Added: {
+                    slog.Error("cannot add controller deployment", "file", d.Filepath)
+                    state.Failed++
+                }
+                case deployment.Updated: {
+                    slog.Warn("scheduling controller deployment restart", "file", d.Filepath)
+                    _, err := d.Apply()
+                    if err != nil {
+                        slog.Error("error updating controller deployment", "file", d.Filepath, "err", err.Error())
+                        state.Failed++
+                    }
+                    slog.Info("controller deployment scheduled, main process will exit soon")
+                }
             }
         }
     }

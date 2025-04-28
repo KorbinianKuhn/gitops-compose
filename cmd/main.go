@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -42,11 +43,12 @@ func main() {
     slog.Info("docker socket connection verified")
 
     // Verify docker credentials (if set)
-    if err := d.VerifyCredentialsIfSet(); err != nil {
+    loggedIn, err := d.LoginIfCredentialsSet()
+    if err != nil {
         slog.Error("failed to verify docker credentials", "error", err)
         panic(err)
     }
-    if d.AreCredentialsSet() {
+    if loggedIn {
         slog.Info("docker credentials verified", "url", config.DockerRegistryUrl)
     }
 
@@ -70,7 +72,7 @@ func main() {
         m.TrackCheckStatus("success")
     }
 
-    slog.Info("starting gitops repeated pull")
+    slog.Info(fmt.Sprintf("starting gitops repeated pull (every %s seconds)", fmt.Sprint(config.CheckIntervalInSeconds)))
     go func() {
         for {
             if err := g.CheckAndUpdateDeployments(); err != nil {

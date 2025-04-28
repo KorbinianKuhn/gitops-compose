@@ -1,6 +1,8 @@
 package deployment
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/korbiniankuhn/gitops-compose/internal/compose"
@@ -24,49 +26,100 @@ type Deployment struct {
 	Filepath string
 	compose compose.ComposeFile
 	State DeploymentState
-	hash string
-	isValid bool
+	config DeploymentConfig
 }
 
-func NewDeployment(filepath string, state DeploymentState) *Deployment {
+type DeploymentConfig struct {
+	hash string
+	isValid bool
+	gitopsIgnore bool
+	gitopsController bool
+}
+
+func NewDeployment(filepath string) *Deployment {
 	c := compose.NewComposeFile(filepath)
-	hash, err := c.GetConfigHash()
 
 	return &Deployment{
 		Filepath: filepath,
 		compose: *c,
-		State: state,
-		hash: hash,
-		isValid: err == nil,
+		State: Unchanged,
+		config: DeploymentConfig{},
 	}
 }
 
-func (d *Deployment) UpdateState() {
-	oldHash := d.hash
+func (d *Deployment) LoadConfig() () {
+	oldConfig := d.config
 
-	newHash, err := d.compose.GetConfigHash()
-	d.hash = newHash
+	d.config = DeploymentConfig{
+		hash: "",
+		isValid: false,
+		gitopsIgnore: false,
+		gitopsController: false,
+	}
+	
+	project, err := d.compose.LoadProject()
 	if err != nil {
-		d.isValid = false
 		return
 	}
 
-	d.isValid = true
-
-	if d.State == Added || d.State == Removed {
+	projectYaml, err := project.MarshalYAML()
+	if err != nil {
 		return
 	}
 
-	if oldHash != newHash {
-		d.State = Updated
-	} else {
-		d.State = Unchanged
+	for _, service := range project.Services {
+		for label, value := range service.Labels {
+			if label == "gitops.ignore" && value == "true" {
+				d.config.gitopsIgnore = true
+			}
+			if label == "gitops.controller" && value == "true" {
+				d.config.gitopsController = true
+			}
+		}
 	}
+
+	hash := sha256.Sum256(projectYaml)
+	d.config.hash = hex.EncodeToString(hash[:])
+	d.config.isValid = true
+
+
+	if oldConfig != (DeploymentConfig{}) {
+		if oldConfig.hash != d.config.hash {
+			d.State = Updated
+		}
+	}
+
+	return
+}
+
+func (d *Deployment) IsIgnored() (bool) {
+	return d.config.gitopsIgnore
+}
+
+func (d *Deployment) IsController() (bool) {
+	return d.config.gitopsController
 }
 
 func (d *Deployment) Apply() (bool, error) {
-	if !d.isValid {
+	if !d.config.isValid {
 		return false, ErrInvalidComposeFile
+	}
+	if d.config.gitopsIgnore {
+		return false, nil
+	}
+	if d.config.gitopsController {
+		switch d.State {
+			case Updated:
+				if err := d.prepareImages(); err != nil {
+					return false, err
+				}
+				if err := d.compose.StartWithDelay(); err != nil {
+					return false, err
+				}
+				return true, nil
+			default:
+				return false, nil
+		}
 	}
 	switch d.State {
 		case Added: {
