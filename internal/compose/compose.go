@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path"
+	"path/filepath"
 
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -36,11 +37,15 @@ func VerifyComposeCli() (error) {
 func (c ComposeFile) LoadProject() (types.Project, error) {
 	ctx := context.Background()
 
+	workingDirectory := path.Dir(c.Filepath)
+
 	options, err := cli.NewProjectOptions(
 		[]string{c.Filepath},
-		cli.WithWorkingDirectory(path.Dir(c.Filepath)),
-		cli.WithOsEnv,
+		cli.WithWorkingDirectory(workingDirectory),
+		cli.WithEnvFiles(filepath.Join(workingDirectory, ".env")),
 		cli.WithDotEnv,
+		cli.WithInterpolation(true),
+		cli.WithResolvedPaths(true),
 	)
 	if err != nil {
 		return types.Project{}, fmt.Errorf("failed to create project options: %w", err)

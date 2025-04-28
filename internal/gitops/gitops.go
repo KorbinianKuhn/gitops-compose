@@ -113,7 +113,7 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
         return err
     }
 
-    slog.Info("ensuring deployments are running", "files", composeFiles)
+    slog.Info("ensuring deployments are running")
 
     // Track deployment states
     state := metrics.NewState()
