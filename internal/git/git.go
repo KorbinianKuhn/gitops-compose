@@ -185,6 +185,7 @@ func (r DeploymentRepo) Pull() (error) {
 		RemoteName: "origin",
 		Auth: r.auth,
 		SingleBranch: true,
+		Force: false,
 	})
 	if err != nil {
 		if err == gogit.NoErrAlreadyUpToDate {
