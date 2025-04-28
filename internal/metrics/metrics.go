@@ -102,8 +102,8 @@ type DeploymentState struct {
     Ignored   int
 }
 
-func NewState() DeploymentState {
-    return DeploymentState{
+func NewState() *DeploymentState {
+    return &DeploymentState{
         Unchanged: 0,
         Started:   0,
         Stopped:   0,
@@ -123,10 +123,13 @@ func (s *DeploymentState) HasChanges() bool {
 }
 
 func (s *DeploymentState) CountRunning() int {
-    return s.Unchanged + s.Started + s.Stopped + s.Updated
+    return s.Unchanged + s.Started + s.Updated
 }
 
-func (c *Metrics) TrackDeploymentState(state DeploymentState) {
+func (c *Metrics) TrackDeploymentState(state *DeploymentState) {
+    print(state.Unchanged)
+    print(state.CountRunning())
+
     // Timestamps
     if state.HasErrors() {
         c.deploymentTimestamp.WithLabelValues("error").SetToCurrentTime()

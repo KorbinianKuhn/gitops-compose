@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path"
 
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -37,6 +38,7 @@ func (c ComposeFile) LoadProject() (types.Project, error) {
 
 	options, err := cli.NewProjectOptions(
 		[]string{c.Filepath},
+		cli.WithWorkingDirectory(path.Dir(c.Filepath)),
 		cli.WithOsEnv,
 		cli.WithDotEnv,
 	)

@@ -25,7 +25,7 @@ func NewGitOps(repo *git.DeploymentRepo, docker *docker.Docker, metrics *metrics
     }
 }
 
-func applyDeploymentChange(d deployment.Deployment, state metrics.DeploymentState) error {
+func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentState) error {
     wasChanged, err := d.Apply()
 
     var operation string
@@ -137,7 +137,7 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
             continue
         }
 
-        applyDeploymentChange(*d, state)
+        applyDeploymentChange(d, state)
     }
 
     return nil
@@ -172,20 +172,20 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
     }
 
     // Determine which deployments to add, remove, or update
-    deployments := []deployment.Deployment{}
+    deployments := []*deployment.Deployment{}
     for _, localFile := range localComposeFiles {
         d := deployment.NewDeployment(localFile)
         d.LoadConfig()
         if !slices.Contains(remoteComposeFiles, localFile) {
             d.State = deployment.Removed
         }
-        deployments = append(deployments, *d)
+        deployments = append(deployments, d)
     }
     for _, remoteFile := range remoteComposeFiles {
         if !slices.Contains(localComposeFiles, remoteFile) {
             d := deployment.NewDeployment(remoteFile)
             d.State = deployment.Added
-            deployments = append(deployments, *d)
+            deployments = append(deployments, d)
         }
     }
 
