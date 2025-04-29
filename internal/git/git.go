@@ -181,7 +181,7 @@ func (r DeploymentRepo) VerifyGitCli() error {
 }
 
 func (r DeploymentRepo) Pull() error {
-	cmd := exec.Command("git", "pull", "--single-branch", "origin")
+	cmd := exec.Command("git", "pull")
 	cmd.Dir = r.path
 
 	output, err := cmd.CombinedOutput()
