@@ -3,7 +3,9 @@ package git
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
+	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -167,7 +169,36 @@ func (r DeploymentRepo) GetLocalComposeFiles() ([]string, error) {
 	return r.filterComposeFiles(*commit)
 }
 
-func (r DeploymentRepo) Pull() (error) {
+func (r DeploymentRepo) VerifyGitCli() error {
+	cmd := exec.Command("git", "ls-remote")
+	cmd.Dir = r.path
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git cli remote access failed: %w %s", err, out)
+	}
+	return nil
+}
+
+func (r DeploymentRepo) Pull() error {
+	cmd := exec.Command("git", "pull", "--single-branch", "origin")
+	cmd.Dir = r.path
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outStr := strings.TrimSpace(string(output))
+		if outStr == "Already up to date." || outStr == "Already up-to-date." {
+			return nil
+		}
+		return fmt.Errorf("pull failed: %w %s", err, output)
+	}
+
+	return nil
+}
+
+
+// TODO: Use go-git instead of exec when this issue is resolved (https://github.com/go-git/go-git/pull/1235)
+func (r DeploymentRepo) pullGitGo() (error) {
 	// Open the repository
 	repo, err := gogit.PlainOpen(r.path)
 	if err != nil {

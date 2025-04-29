@@ -32,6 +32,14 @@ func main() {
         slog.Error("failed to open deployment repo", "error", err)
         panic(err)
     }
+
+    // TODO: skip when go-git is able to pull changes without losing untracked files
+    // Verify git cli
+    if err := r.VerifyGitCli(); err != nil {
+        slog.Error("failed to verify git cli", "error", err)
+        panic(err)
+    }
+
     slog.Info("deployment repo configured", "path", config.RepositoryPath)
 
     // Verify docker socket connection

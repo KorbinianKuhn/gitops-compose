@@ -25,7 +25,7 @@ func NewGitOps(repo *git.DeploymentRepo, docker *docker.Docker, metrics *metrics
     }
 }
 
-func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentState) error {
+func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentState) {
     wasChanged, err := d.Apply()
 
     var operation string
@@ -45,6 +45,7 @@ func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentSt
     if err == deployment.ErrInvalidComposeFile {
         state.Invalid++
         slog.Error("invalid compose file", "file", d.Filepath)
+        return
     } else if err != nil {
         state.Failed++
         if d.State == deployment.Unchanged {
@@ -52,6 +53,7 @@ func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentSt
         } else {
             slog.Error("error applying deployment change", "file", d.Filepath, "operation", operation, "err", err.Error())
         }
+        return
     }
 
     switch d.State {
@@ -89,8 +91,6 @@ func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentSt
                 state.Unchanged++
             }
     }
-
-    return nil
 }
 
 func (g *GitOps) EnsureDeploymentsAreRunning() error {
