@@ -123,7 +123,7 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
 
     // Ensure all deployments are running
     for _, composeFile := range composeFiles {
-        d := deployment.NewDeployment(composeFile)
+        d := deployment.NewDeployment(g.docker, composeFile)
         d.LoadConfig()
 
         if d.IsController() {
@@ -174,7 +174,7 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
     // Determine which deployments to add, remove, or update
     deployments := []*deployment.Deployment{}
     for _, localFile := range localComposeFiles {
-        d := deployment.NewDeployment(localFile)
+        d := deployment.NewDeployment(g.docker, localFile)
         d.LoadConfig()
         if !slices.Contains(remoteComposeFiles, localFile) {
             d.State = deployment.Removed
@@ -183,7 +183,7 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
     }
     for _, remoteFile := range remoteComposeFiles {
         if !slices.Contains(localComposeFiles, remoteFile) {
-            d := deployment.NewDeployment(remoteFile)
+            d := deployment.NewDeployment(g.docker, remoteFile)
             d.State = deployment.Added
             deployments = append(deployments, d)
         }

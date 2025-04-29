@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/korbiniankuhn/gitops-compose/internal/compose"
+	"github.com/korbiniankuhn/gitops-compose/internal/docker"
 )
 
 var (
@@ -23,6 +24,7 @@ const (
 )
 
 type Deployment struct {
+	docker docker.Docker
 	Filepath string
 	compose compose.ComposeFile
 	State DeploymentState
@@ -36,10 +38,11 @@ type DeploymentConfig struct {
 	gitopsController bool
 }
 
-func NewDeployment(filepath string) *Deployment {
+func NewDeployment(docker *docker.Docker, filepath string) *Deployment {
 	c := compose.NewComposeFile(filepath)
 
 	return &Deployment{
+		docker: *docker,
 		Filepath: filepath,
 		compose: *c,
 		State: Unchanged,
@@ -110,12 +113,13 @@ func (d *Deployment) Apply() (bool, error) {
 	if d.config.gitopsController {
 		switch d.State {
 			case Updated:
-				if err := d.prepareImages(); err != nil {
-					return false, err
-				}
-				if err := d.compose.StartWithDelay(); err != nil {
-					return false, err
-				}
+				// TODO: start temporary container that restarts the controller
+				// if err := d.prepareImages(); err != nil {
+				// 	return false, err
+				// }
+				// if err := d.compose.StartWithDelay(); err != nil {
+				// 	return false, err
+				// }
 				return true, nil
 			default:
 				return false, nil
@@ -164,15 +168,18 @@ func (d *Deployment) Apply() (bool, error) {
 }
 
 func (d *Deployment) prepareImages() (error) {
-	isPullRequired, err := d.compose.IsPullRequired()
+	images, err := d.compose.ListImages()
 	if err != nil {
 		return err
 	}
-	if isPullRequired {
-		if err := d.compose.PullImages(); err != nil {
+
+	for _, image := range images {
+		err := d.docker.Pull(image)
+		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 

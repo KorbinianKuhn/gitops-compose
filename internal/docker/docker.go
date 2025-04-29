@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 )
@@ -24,6 +25,7 @@ func NewDocker(url, username, password string) *Docker {
 
 func (d Docker) getClient() (*client.Client, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
@@ -68,4 +70,21 @@ func (d Docker) LoginIfCredentialsSet() (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (d Docker) Pull(imageName string) error {
+	cli, err := d.getClient()
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	// TODO: eventually add auth to image.PullOptions
+	reader, err := cli.ImagePull(context.Background(), imageName, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("docker pull failed: %w", err)
+	}
+	defer reader.Close()
+
+	return nil
 }

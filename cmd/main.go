@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/korbiniankuhn/gitops-compose/internal/compose"
 	"github.com/korbiniankuhn/gitops-compose/internal/config"
 	"github.com/korbiniankuhn/gitops-compose/internal/docker"
 	"github.com/korbiniankuhn/gitops-compose/internal/git"
@@ -59,13 +58,6 @@ func main() {
     if loggedIn {
         slog.Info("docker credentials verified", "url", config.DockerRegistryUrl)
     }
-
-    // Verify docker compose cli
-    if err:= compose.VerifyComposeCli(); err != nil {
-        slog.Error("failed to verify docker compose cli", "error", err)
-        panic(err)
-    }
-    slog.Info("docker compose cli verified")
 
     // Initialise metrics
     m := metrics.NewMetrics()

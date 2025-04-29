@@ -1,16 +1,22 @@
 package compose
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/cli/cli/command"
+	"github.com/docker/cli/cli/flags"
+	"github.com/docker/compose/v2/pkg/api"
+	"github.com/docker/compose/v2/pkg/compose"
 )
 
 type ComposeFile struct {
@@ -23,19 +29,7 @@ func NewComposeFile(filepath string) *ComposeFile {
 	}
 }
 
-func VerifyComposeCli() (error) {
-	cmd := exec.Command("docker", "compose", "version")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("docker compose cli is not working: %w %s", err, output)
-	}
-	if bytes.Contains(output, []byte("Docker Compose")) {
-		return nil
-	}
-	return fmt.Errorf("docker compose cli is not working: %w %s", err, output)
-}
-
-func (c ComposeFile) LoadProject() (types.Project, error) {
+func (c ComposeFile) LoadProject() (*types.Project, error) {
 	ctx := context.Background()
 
 	workingDirectory := path.Dir(c.Filepath)
@@ -57,79 +51,161 @@ func (c ComposeFile) LoadProject() (types.Project, error) {
 		optionsFns...,
 	)
 	if err != nil {
-		return types.Project{}, fmt.Errorf("failed to create project options: %w", err)
+		return &types.Project{}, fmt.Errorf("failed to create project options: %w", err)
 	}
 
 	project, err := options.LoadProject(ctx)
 	if err != nil {
-		return types.Project{}, fmt.Errorf("invalid compose file: %w", err)
+		return &types.Project{}, fmt.Errorf("invalid compose file: %w", err)
 	}
 
-	return *project, nil
+	return project, nil
 }
 
-func (c ComposeFile) IsPullRequired() (bool, error) {
-	cmd := exec.Command("docker", "compose", "-f", c.Filepath, "pull", "--dry-run", "--quiet")
-	output, err := cmd.CombinedOutput()
+func (c ComposeFile) ListImages() ([]string, error) {
+	project, err := c.LoadProject()
 	if err != nil {
-		return false, fmt.Errorf("docker compose pull dry-run failed: %w %s", err, output)
+		return []string{}, err
 	}
-	if bytes.Contains(output, []byte("Would pull")) {
-		return true, nil
-	} else {
-		return false, nil
+	images := []string{}
+	for _, service := range project.Services {
+		images = append(images, service.Image)
 	}
+
+	return images, nil
 }
 
-func (c ComposeFile) PullImages() (error) {
-	cmd := exec.Command("docker", "compose", "-f", c.Filepath, "pull", "--quiet")
-	output, err := cmd.CombinedOutput()
+func getService() (api.Service, error) {
+	outputStream := io.Discard
+	errorStream := io.Discard
+
+	dockerCli, err := command.NewDockerCli(
+		command.WithOutputStream(outputStream),
+		command.WithErrorStream(errorStream),
+	)
 	if err != nil {
-		return fmt.Errorf("docker compose pull failed: %w %s", err, output)
+		return nil, fmt.Errorf("failed to create docker cli: %w", err)
 	}
-	return nil
+
+	opts := &flags.ClientOptions{Context: "default", LogLevel: "error"}
+
+	err = dockerCli.Initialize(opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize docker cli: %w", err)
+	}
+
+	return compose.NewComposeService(dockerCli), nil
 }
 
 func (c ComposeFile) IsRunning() (bool, error) {
-	cmd := exec.Command("docker", "compose", "-f", c.Filepath, "ps", "--quiet")
-	output, err := cmd.CombinedOutput()
+	service, err := getService()
 	if err != nil {
-		return false, fmt.Errorf("docker ps failed: %w %s", err, output)
+		return false, err
 	}
-	if len(output) > 0 {
-		return true, nil
-	} else {
+
+	project, err := c.LoadProject()
+	if err != nil {
+		return false, err
+	}
+
+	ctx := context.Background()
+
+	services := []string{}
+	for _, s := range project.Services {
+		services = append(services, s.Name)
+	}
+
+	containers, err := service.Ps(ctx, project.Name, api.PsOptions{
+		Project: project,
+		All: true,
+		Services: services,
+	})
+
+	if err != nil {
+		return false, fmt.Errorf("docker compose ps failed: %w", err)
+	}
+
+	if len(containers) == 0 {
+		slog.Info("No containers found for project", "project", project.Name)
 		return false, nil
 	}
+
+	for _, container := range containers {
+		if container.State == "running" {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
-func (c ComposeFile) Stop() error {
-	cmd := exec.Command("docker", "compose", "-f", c.Filepath, "down")
-	output, err := cmd.CombinedOutput()
+func (c ComposeFile) Stop() (error) {
+	service, err := getService()
 	if err != nil {
-		return fmt.Errorf("docker compose down failed: %w %s", err, output)
+		return err
 	}
+
+	project, err := c.LoadProject()
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+
+	err = service.Down(ctx, project.Name, api.DownOptions{
+		RemoveOrphans: true,
+		Project: project,
+	})
+
+	if err != nil {
+		return fmt.Errorf("docker compose down failed: %w", err)
+	}
+
 	return nil
 }
 
-func (c ComposeFile) Start() error {
-	cmd := exec.Command("docker", "compose", "-f", c.Filepath, "up", "-d", "--remove-orphans")
-	output, err := cmd.CombinedOutput()
+func (c ComposeFile) Start() (error) {
+	service, err := getService()
 	if err != nil {
-		return fmt.Errorf("docker compose up failed: %w %s", err, output)
+		return err
 	}
-	return nil
-}
 
-func (c ComposeFile) StartWithDelay() (error) {
-	// Compose down + up with sleep
-	cmd := exec.Command("sh", "-c", `(sleep 5 && docker compose -f %s down && docker compose -f %s up -d) &`, c.Filepath, c.Filepath)
+	project, err := c.LoadProject()
+	if err != nil {
+		return err
+	}
 
-	// Start the command but don't wait for it
-    err := cmd.Start()
-    if err != nil {
-        return fmt.Errorf("failed to schedule compose restart: %v", err)
-    }
+	for i, s := range project.Services {
+		s.CustomLabels = map[string]string{
+			api.ProjectLabel: project.Name,
+			api.ServiceLabel: s.Name,
+			api.VersionLabel: api.ComposeVersion,
+			api.WorkingDirLabel: project.WorkingDir,
+			api.ConfigFilesLabel: strings.Join(project.ComposeFiles, ","),
+			api.OneoffLabel: "False", // default, will be overridden by `run` command
+		}
+		project.Services[i] = s
+	}
+
+	ctx := context.Background()
+
+	err = service.Up(ctx, project, api.UpOptions{
+		Create: api.CreateOptions{
+			RemoveOrphans: true,
+			Recreate: api.RecreateForce,
+			RecreateDependencies: api.RecreateForce,
+			QuietPull: true,
+		},
+		Start: api.StartOptions{
+			Project: project,
+			Wait: true,
+			WaitTimeout: time.Duration(180) * time.Second,
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("docker compose up failed: %w", err)
+	}
 
 	return nil
 }
