@@ -21,6 +21,10 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
 - Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
 - Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`
 
+### HTTP server
+
+By default GitopsCompose starts a HTTP server with `/metrics` and `/webhook` endpoints on port `:2112`. Either disable the endpoints or add authentication through a reverse proxy when the port is accessible through the internet.
+
 ## Example
 
 Maintain a GIT repository to store all deployments on your host:
@@ -52,6 +56,20 @@ Maintain a GIT repository to store all deployments on your host:
 
 > Docker compose labels are set on a service level. However, GitopsCompose only manages whole stacks. The presence of a label will affect the whole stack (e.g. all services will be ignored when one has the ignore label)
 
+### Environment variables
+
+| Variable                  | Default     | Required | Description                                    |
+| ------------------------- | ----------- | -------- | ---------------------------------------------- |
+| CHECK_INTERVAL_IN_SECONDS | 300         | no       | -1 disables the repeated check                 |
+| REPOSITORY_PATH           | /repository | no       | Container internal path for the git repository |
+| REPOSITORY_USERNAME       |             | yes      |                                                |
+| REPOSITORY_PASSWORD       |             | yes      |                                                |
+| DOCKER_REGISTRY_URL       |             | no       |                                                |
+| DOCKER_REGISTRY_USERNAME  |             | no       |                                                |
+| DOCKER_REGISTRY_PASSWORD  |             | no       |                                                |
+| DISABLE_WEBHOOK           | false       | no       | Disables the /webhook endpoint                 |
+| DISABLE_METRICS           | false       | no       | Disables the /metrics endpoint                 |
+
 ### Configuration
 
 gitops/docker-compose.yml
@@ -68,8 +86,6 @@ services:
     group_add:
       - ${GID_DOCKER}
     environment:
-      CHECK_INTERVAL_IN_SECONDS: 300
-      REPOSITORY_PATH: /repository
       REPOSITORY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME}
       REPOSITORY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD}
       DOCKER_REGISTRY_URL: registry.gitlab.com
@@ -84,7 +100,7 @@ services:
 
 ## Monitoring
 
-Prometheus metrics are exported under "localhost:2112"
+Prometheus metrics are exported under [localhost:2112/metrics](localhost:2112/metrics):
 
 ```yaml
 # HELP gitops_check_timestamp_seconds Unix timestamp of the last GitOps check by status

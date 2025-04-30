@@ -61,6 +61,12 @@ func main() {
 
     // Initialise metrics
     m := metrics.NewMetrics()
+    if !config.DisableMetrics {
+        http.Handle("/metrics", m.GetMetricsHandler())
+        slog.Info("metrics enabled", "url", "/metrics")
+    } else {
+        slog.Info("skipping metrics (disabled in config)")
+    }
 
     // Initialise gitops
     g := gitops.NewGitOps(r, d, m)
@@ -72,30 +78,58 @@ func main() {
         m.TrackCheckStatus("success")
     }
 
-    slog.Info(fmt.Sprintf("starting gitops repeated pull (every %s seconds)", fmt.Sprint(config.CheckIntervalInSeconds)))
+    trigger := make(chan struct{})
+
+    // Run gitops check on trigger
     go func() {
-        for {
+        for range trigger {
             if err := g.CheckAndUpdateDeployments(); err != nil {
                 m.TrackCheckStatus("error")
             } else {
                 m.TrackCheckStatus("success")
             }
-            time.Sleep(time.Duration(config.CheckIntervalInSeconds) * time.Second)
         }
     }()
 
-    http.Handle("/metrics", m.GetMetricsHandler())
-
-    // http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
-    //     // TODO: check access token
-    //     w.WriteHeader(http.StatusAccepted)
-    //     w.Write([]byte("Check triggered"))
-    // })
-    
-    if err := http.ListenAndServe(":2112", nil); err != nil {
-        slog.Error("failed to start metrics server", "error", err)
-        panic(err)
+    // Run gitops check on interval
+    if config.CheckIntervalInSeconds > 0 {
+        slog.Info(fmt.Sprintf("starting gitops repeated pull (every %s seconds)", fmt.Sprint(config.CheckIntervalInSeconds)))
+        go func() {
+            ticker := time.NewTicker(time.Duration(config.CheckIntervalInSeconds) * time.Second)
+            defer ticker.Stop()
+            for range ticker.C {
+                trigger <- struct{}{}
+            }
+        }()
+    } else {
+        slog.Info("skipping gitops repeated pull (check interval is negative)")
     }
 
-    slog.Info("starting metrics server", "port", "2112")
+    // Webhook to trigger deployments
+    if !config.DisableWebhook {
+        http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
+            select {
+                case trigger <- struct{}{}:
+                    slog.Info("triggered check via webhook")
+                default:
+                    slog.Info("ignored webhook as channel is already full")
+            }
+            w.WriteHeader(http.StatusAccepted)
+        })
+        slog.Info("webhook enabled", "url", "/webhook")
+    } else {
+        slog.Info("skipping webhook (disabled in config)")
+    }
+    
+    // Start http server
+    if !config.DisableMetrics || !config.DisableWebhook {
+        if err := http.ListenAndServe(":2112", nil); err != nil {
+            slog.Error("failed to start metrics server", "error", err)
+            panic(err)
+        }
+
+        slog.Info("starting http server", "port", "2112")
+    } else {
+        slog.Info("skipping http server")
+    }
 }

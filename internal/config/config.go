@@ -9,13 +9,15 @@ import (
 
 
 type Config struct {
-	CheckIntervalInSeconds int `default:"60" split_words:"true"`
-	RepositoryPath string `required:"true" split_words:"true"`
+	CheckIntervalInSeconds int `default:"300" split_words:"true"`
+	RepositoryPath string `default:"/repository" split_words:"true"`
 	RepositoryUsername string `required:"true" split_words:"true"`
 	RepositoryPassword string `required:"true" split_words:"true"`
 	DockerRegistryUrl string `required:"false" split_words:"true"`
 	DockerRegistryUsername string `required:"false" split_words:"true"`
 	DockerRegistryPassword string `required:"false" split_words:"true"`
+	DisableWebhook bool `default:"false" split_words:"true"`
+	DisableMetrics bool `default:"false" split_words:"true"`
 }
 
 

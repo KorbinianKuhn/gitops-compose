@@ -147,12 +147,13 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
     // Check if there are any changes in the git repository
     hasChanges, err := g.repo.HasChanges()
     if err != nil {
-        slog.Error("error checking for changes", "err", err.Error())
+        slog.Error("error checking for git changes", "err", err.Error())
         return err
     }
 
     // If there are no changes, return
     if !hasChanges {
+        slog.Info("no git changes detected")
         return nil
     }
 
