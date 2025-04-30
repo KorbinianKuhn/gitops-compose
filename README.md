@@ -4,22 +4,23 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
 
 ## How it works
 
-- It repeatedly checks a local repository for remote changes
-- If changes exist:
-  1. Get all `docker-compose.yml` files of the local git head
-  2. Get all `docker-compose.yml` files of the remote git head (stop here when something is wrong)
-  3. Stop all removed compose stacks
-  4. Pull changes
-  5. Detect changed deployments (added or modified)
-  6. Apply changes (pull images, eventually stop running stacks, start stack)
+- 🔁 It repeatedly checks a local repository for remote changes
+- ✏️ If changes exist:
+  1. 📂 Get all `docker-compose.yml` files of the local git head
+  2. 🌐 Get all `docker-compose.yml` files of the remote git head (stop here when something is wrong)
+  3. 🗑️ Stop all removed compose stacks
+  4. ⬇️ Pull changes
+  5. 🛠️ Detect changed deployments (added or modified)
+  6. 🚀 Apply changes (pull images, eventually stop running stacks, start stack)
 
 > GitopsCompose tries to exit early when errors occur (e.g. when the local repository is not clean). When it proceeds to step 3, errors are tracked but all operations continue (e.g. a failed stop of a removed deployment will not prevent other stacks to be updated).
 
 ### Limitations
 
-- Pinned image versions are recommended. If you use `:latest`, somehow change compose.yml to trigger changes.
-- Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
-- Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`
+- 🌐 Initially clone repository with `HTTP` not `SSH`
+- 📌 Pinned image versions are recommended. If you use `:latest`, somehow change compose.yml to trigger changes.
+- ⚠️ Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
+- 🏷️ Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`
 
 ### HTTP server
 
@@ -86,8 +87,8 @@ services:
     group_add:
       - ${GID_DOCKER}
     environment:
-      REPOSITORY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME} # remove if credentials are part already set in remote url https://username:password@github.com/...
-      REPOSITORY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD} # remove if credentials are part already set in remote url https://username:password@github.com/...
+      REPOSITORY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME} # remove if credentials are set in remote url https://username:password@github.com/...
+      REPOSITORY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD} # remove if credentials are set in remote url https://username:password@github.com/...
       DOCKER_REGISTRY_URL: registry.gitlab.com
       DOCKER_REGISTRY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME} # defaults to repository username
       DOCKER_REGISTRY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD} # defaults to repository password
