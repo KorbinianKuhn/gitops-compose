@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -10,8 +11,6 @@ import (
 	"github.com/korbiniankuhn/gitops-compose/internal/git"
 	"github.com/korbiniankuhn/gitops-compose/internal/gitops"
 	"github.com/korbiniankuhn/gitops-compose/internal/metrics"
-
-	"log/slog"
 )
 
 func main() {
@@ -25,12 +24,31 @@ func main() {
     }
     slog.Info("config loaded")
 
+    // Get credentials from repository if not set
+    if config.RepositoryUsername == "" || config.RepositoryPassword == "" {
+        repoUsername, repoPassword := git.GetCredentialsFromRepository(config.RepositoryPath)
+
+        if repoUsername == "" || repoPassword == "" {
+            slog.Warn("no credentials set in environment or repository origin")
+        } else {
+            slog.Info("credentials set from repository origin")
+            config.SetCredentials(repoUsername, repoPassword)
+        }
+    }
+
     // Verify git repository
     r, err := git.NewDeploymentRepo(config.RepositoryUsername, config.RepositoryPassword, config.RepositoryPath)
     if err != nil {
         slog.Error("failed to open deployment repo", "error", err)
         panic(err)
     }
+
+    // Verify git remote access
+    if err := r.VerifyRemoteAccess(); err != nil {
+        slog.Error("failed to verify git remote access", "error", err)
+        panic(err)
+    }
+    slog.Info("git remote access verified")
 
     // TODO: skip when go-git is able to pull changes without losing untracked files
     // Verify git cli

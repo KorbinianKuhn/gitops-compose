@@ -150,6 +150,8 @@ func (c ComposeFile) Stop() (error) {
 	if err := service.Down(ctx, project.Name, api.DownOptions{
 		RemoveOrphans: true,
 		Project: project,
+		Images: "local",
+		Volumes: false,
 	}); err != nil {
 		return fmt.Errorf("docker compose down failed: %w", err)
 	}
@@ -188,6 +190,8 @@ func (c ComposeFile) Start() (error) {
 			Recreate: api.RecreateForce,
 			RecreateDependencies: api.RecreateForce,
 			QuietPull: true,
+			AssumeYes: true,
+			// Timeout: time.Duration(180) * time.Second, // TODO: set timeout
 		},
 		Start: api.StartOptions{
 			Project: project,

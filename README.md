@@ -58,17 +58,17 @@ Maintain a GIT repository to store all deployments on your host:
 
 ### Environment variables
 
-| Variable                  | Default     | Required | Description                                    |
-| ------------------------- | ----------- | -------- | ---------------------------------------------- |
-| CHECK_INTERVAL_IN_SECONDS | 300         | no       | -1 disables the repeated check                 |
-| REPOSITORY_PATH           | /repository | no       | Container internal path for the git repository |
-| REPOSITORY_USERNAME       |             | yes      |                                                |
-| REPOSITORY_PASSWORD       |             | yes      |                                                |
-| DOCKER_REGISTRY_URL       |             | no       |                                                |
-| DOCKER_REGISTRY_USERNAME  |             | no       |                                                |
-| DOCKER_REGISTRY_PASSWORD  |             | no       |                                                |
-| DISABLE_WEBHOOK           | false       | no       | Disables the /webhook endpoint                 |
-| DISABLE_METRICS           | false       | no       | Disables the /metrics endpoint                 |
+| Variable                  | Default     | Required | Description                                               |
+| ------------------------- | ----------- | -------- | --------------------------------------------------------- |
+| CHECK_INTERVAL_IN_SECONDS | 300         | no       | -1 disables the repeated check                            |
+| REPOSITORY_PATH           | /repository | no       | Container internal path for the git repository            |
+| REPOSITORY_USERNAME       |             | no       | Extracted from remote origin url, if not set              |
+| REPOSITORY_PASSWORD       |             | no       | Extracted from remote origin url, if not set              |
+| DOCKER_REGISTRY_URL       |             | no       |                                                           |
+| DOCKER_REGISTRY_USERNAME  |             | no       | Defaults to repository username, when registry url is set |
+| DOCKER_REGISTRY_PASSWORD  |             | no       | Defaults to repository username, when registry url is set |
+| DISABLE_WEBHOOK           | false       | no       | Disables the /webhook endpoint                            |
+| DISABLE_METRICS           | false       | no       | Disables the /metrics endpoint                            |
 
 ### Configuration
 
@@ -86,11 +86,11 @@ services:
     group_add:
       - ${GID_DOCKER}
     environment:
-      REPOSITORY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME}
-      REPOSITORY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD}
+      REPOSITORY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME} # remove if credentials are part already set in remote url https://username:password@github.com/...
+      REPOSITORY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD} # remove if credentials are part already set in remote url https://username:password@github.com/...
       DOCKER_REGISTRY_URL: registry.gitlab.com
-      DOCKER_REGISTRY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME}
-      DOCKER_REGISTRY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD}
+      DOCKER_REGISTRY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME} # defaults to repository username
+      DOCKER_REGISTRY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD} # defaults to repository password
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./deployments:/repository

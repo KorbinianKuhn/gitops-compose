@@ -2,7 +2,6 @@ package gitops
 
 import (
 	"log/slog"
-
 	"slices"
 
 	"github.com/korbiniankuhn/gitops-compose/internal/deployment"
@@ -254,13 +253,14 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
                     state.Failed++
                 }
                 case deployment.Updated: {
-                    slog.Warn("scheduling controller deployment restart", "file", d.Filepath)
-                    _, err := d.Apply()
-                    if err != nil {
-                        slog.Error("error updating controller deployment", "file", d.Filepath, "err", err.Error())
-                        state.Failed++
-                    }
-                    slog.Info("controller deployment scheduled, main process will exit soon")
+                    slog.Error("update controller deployment is not implemented yet", "file", d.Filepath)
+                    // slog.Warn("scheduling controller deployment restart", "file", d.Filepath)
+                    // _, err := d.Apply()
+                    // if err != nil {
+                    //     slog.Error("error updating controller deployment", "file", d.Filepath, "err", err.Error())
+                    //     state.Failed++
+                    // }
+                    // slog.Info("controller deployment scheduled, main process will exit soon")
                 }
             }
         }

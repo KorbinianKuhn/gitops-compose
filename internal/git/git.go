@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -23,23 +24,105 @@ type DeploymentRepo struct {
 	path string
 }
 
+func GetCredentialsFromRepository(path string) (string, string) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return "", ""
+	}
+
+	r, err := gogit.PlainOpen(path)
+	if err != nil {
+		return "", ""
+	}
+
+	origin, err := r.Remote("origin")
+	if err != nil {
+		return "", ""
+	}
+
+	var remoteURL string
+	for _, u := range origin.Config().URLs {
+		remoteURL = u
+		break
+	}
+
+	if remoteURL == "" {
+		return "", ""
+	}
+
+	u, err := url.Parse(remoteURL)
+	if err != nil {
+		return "", ""
+	}
+
+	var username, password string
+
+	if u.User != nil {
+		username = u.User.Username()
+		password, _ = u.User.Password()
+	}
+
+	return username, password
+}
+
+
 func NewDeploymentRepo(username, password, path string) (*DeploymentRepo, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, ErrPathDoesNotExist
 	}
 
-	_, err := gogit.PlainOpen(path)
+	r, err := gogit.PlainOpen(path)
 	if err != nil {
 		return nil, fmt.Errorf("open repo failed: %w", err)
 	}
 
-	return &DeploymentRepo{
-		auth: &gitHttp.BasicAuth{
+	origin, err := r.Remote("origin")
+	if err != nil {
+		return nil, fmt.Errorf("get remote failed: %w", err)
+	}
+
+	var remoteURL string
+	for _, u := range origin.Config().URLs {
+		remoteURL = u
+		break
+	}
+
+	if remoteURL == "" {
+		return nil, fmt.Errorf("remote url not found")
+	}
+
+	auth := &gitHttp.BasicAuth{}
+	if username != "" && password != "" {
+		auth = &gitHttp.BasicAuth{
 			Username: username,
 			Password: password,
-		},
+		}
+	}
+
+	return &DeploymentRepo{
+		auth: auth,
 		path: path,
 	}, nil
+}
+
+func (r DeploymentRepo) VerifyRemoteAccess() error {
+	repo, err := gogit.PlainOpen(r.path)
+	if err != nil {
+		return fmt.Errorf("open repo failed: %w", err)
+	}
+
+	remote, err := repo.Remote("origin")
+	if err != nil {
+		return fmt.Errorf("get remote failed: %w", err)
+	}
+
+	_, err = remote.List(&gogit.ListOptions{
+		Auth: r.auth,
+	})
+	if err != nil {
+		return fmt.Errorf("remote is not working or auth failed: %w", err)
+	}
+
+	return nil
 }
 
 func (r DeploymentRepo) HasChanges() (bool, error) {
