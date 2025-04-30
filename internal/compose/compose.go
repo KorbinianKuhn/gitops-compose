@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -76,12 +75,9 @@ func (c ComposeFile) ListImages() ([]string, error) {
 }
 
 func getService() (api.Service, error) {
-	outputStream := io.Discard
-	errorStream := io.Discard
-
 	dockerCli, err := command.NewDockerCli(
-		command.WithOutputStream(outputStream),
-		command.WithErrorStream(errorStream),
+		command.WithOutputStream(io.Discard),
+		command.WithErrorStream(io.Discard),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker cli: %w", err)
@@ -89,8 +85,7 @@ func getService() (api.Service, error) {
 
 	opts := &flags.ClientOptions{Context: "default", LogLevel: "error"}
 
-	err = dockerCli.Initialize(opts)
-	if err != nil {
+	if err := dockerCli.Initialize(opts); err != nil {
 		return nil, fmt.Errorf("failed to initialize docker cli: %w", err)
 	}
 
@@ -126,10 +121,10 @@ func (c ComposeFile) IsRunning() (bool, error) {
 	}
 
 	if len(containers) == 0 {
-		slog.Info("No containers found for project", "project", project.Name)
 		return false, nil
 	}
 
+	// TODO: should we check for all containers or just one?
 	for _, container := range containers {
 		if container.State == "running" {
 			return true, nil
@@ -152,12 +147,10 @@ func (c ComposeFile) Stop() (error) {
 
 	ctx := context.Background()
 
-	err = service.Down(ctx, project.Name, api.DownOptions{
+	if err := service.Down(ctx, project.Name, api.DownOptions{
 		RemoveOrphans: true,
 		Project: project,
-	})
-
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("docker compose down failed: %w", err)
 	}
 
