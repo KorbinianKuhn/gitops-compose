@@ -18,6 +18,7 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
 ### Limitations
 
 - 🌐 Initially clone repository with `HTTP` not `SSH`
+- 🔐 Clone repo with credentials in the url (if authentication is required)
 - 📌 Pinned image versions are recommended. If you use `:latest`, somehow change compose.yml to trigger changes.
 - ⚠️ Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
 - 🏷️ Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`
@@ -59,26 +60,31 @@ Maintain a GIT repository to store all deployments on your host:
 
 ### Environment variables
 
-| Variable                  | Default     | Required | Description                                               |
-| ------------------------- | ----------- | -------- | --------------------------------------------------------- |
-| CHECK_INTERVAL_IN_SECONDS | 300         | no       | -1 disables the repeated check                            |
-| REPOSITORY_PATH           | /repository | no       | Container internal path for the git repository            |
-| REPOSITORY_USERNAME       |             | no       | Extracted from remote origin url, if not set              |
-| REPOSITORY_PASSWORD       |             | no       | Extracted from remote origin url, if not set              |
-| DOCKER_REGISTRY_URL       |             | no       |                                                           |
-| DOCKER_REGISTRY_USERNAME  |             | no       | Defaults to repository username, when registry url is set |
-| DOCKER_REGISTRY_PASSWORD  |             | no       | Defaults to repository username, when registry url is set |
-| DISABLE_WEBHOOK           | false       | no       | Disables the /webhook endpoint                            |
-| DISABLE_METRICS           | false       | no       | Disables the /metrics endpoint                            |
+| Variable                  | Default     | Required | Description                                                                  |
+| ------------------------- | ----------- | -------- | ---------------------------------------------------------------------------- |
+| CHECK_INTERVAL_IN_SECONDS | 300         | no       | -1 disables the repeated check                                               |
+| REPOSITORY_PATH           | /repository | no       | Container internal path for the git repository                               |
+| DOCKER_REGISTRIES         | []          | no       | List of docker registry credentials [{url: "", username: "", password: "" }] |
+| WEBHOOK_ENABLED           | true        | no       | Enables the /webhook endpoint                                                |
+| METRICS_ENABLED           | true        | no       | Enables the /metrics endpoint                                                |
 
 ### Configuration
+
+.env
+
+```env
+UID=1000
+GID=1000
+GID_DOCKER=1001
+DOCKER_REGISTRIES = [{ "url": "registry.gitlab.com", username: "user", "password": "secret" }]
+```
 
 gitops/docker-compose.yml
 
 ```yaml
 services:
   gitops-compose:
-    image: ghcr.io/korbiniankuhn/gitops-compose:0.0.1-dev.12
+    image: ghcr.io/korbiniankuhn/gitops-compose:1.0.0
     container_name: gitops-compose
     restart: always
     ports:
@@ -87,11 +93,7 @@ services:
     group_add:
       - ${GID_DOCKER}
     environment:
-      REPOSITORY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME} # remove if credentials are set in remote url https://username:password@github.com/...
-      REPOSITORY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD} # remove if credentials are set in remote url https://username:password@github.com/...
-      DOCKER_REGISTRY_URL: registry.gitlab.com
-      DOCKER_REGISTRY_USERNAME: ${GITLAB_DEPLOY_TOKEN_USERNAME} # defaults to repository username
-      DOCKER_REGISTRY_PASSWORD: ${GITLAB_DEPLOY_TOKEN_PASSWORD} # defaults to repository password
+      DOCKER_REGISTRIES: ${DOCKER_REGISTRIES}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./deployments:/repository
