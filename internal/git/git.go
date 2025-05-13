@@ -2,7 +2,6 @@ package git
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -16,7 +15,7 @@ import (
 
 var (
 	ErrPathDoesNotExist = fmt.Errorf("path does not exist")
-	ErrHasLocalChanges = fmt.Errorf("local changes detected")
+	ErrHasLocalChanges  = fmt.Errorf("local changes detected")
 )
 
 type DeploymentRepo struct {
@@ -24,48 +23,18 @@ type DeploymentRepo struct {
 	path string
 }
 
-func GetCredentialsFromRepository(path string) (string, string) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return "", ""
+type DeploymentRepoOption func(*DeploymentRepo)
+
+func WithAuth(username, password string) DeploymentRepoOption {
+	return func(r *DeploymentRepo) {
+		r.auth = &gitHttp.BasicAuth{
+			Username: username,
+			Password: password,
+		}
 	}
-
-	r, err := gogit.PlainOpen(path)
-	if err != nil {
-		return "", ""
-	}
-
-	origin, err := r.Remote("origin")
-	if err != nil {
-		return "", ""
-	}
-
-	var remoteURL string
-	for _, u := range origin.Config().URLs {
-		remoteURL = u
-		break
-	}
-
-	if remoteURL == "" {
-		return "", ""
-	}
-
-	u, err := url.Parse(remoteURL)
-	if err != nil {
-		return "", ""
-	}
-
-	var username, password string
-
-	if u.User != nil {
-		username = u.User.Username()
-		password, _ = u.User.Password()
-	}
-
-	return username, password
 }
 
-
-func NewDeploymentRepo(username, password, path string) (*DeploymentRepo, error) {
+func NewDeploymentRepo(path string, opts ...DeploymentRepoOption) (*DeploymentRepo, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, ErrPathDoesNotExist
 	}
@@ -90,18 +59,15 @@ func NewDeploymentRepo(username, password, path string) (*DeploymentRepo, error)
 		return nil, fmt.Errorf("remote url not found")
 	}
 
-	auth := &gitHttp.BasicAuth{}
-	if username != "" && password != "" {
-		auth = &gitHttp.BasicAuth{
-			Username: username,
-			Password: password,
-		}
+	repo := &DeploymentRepo{
+		path: path,
 	}
 
-	return &DeploymentRepo{
-		auth: auth,
-		path: path,
-	}, nil
+	for _, opt := range opts {
+		opt(repo)
+	}
+
+	return repo, nil
 }
 
 func (r DeploymentRepo) VerifyRemoteAccess() error {
@@ -115,9 +81,12 @@ func (r DeploymentRepo) VerifyRemoteAccess() error {
 		return fmt.Errorf("get remote failed: %w", err)
 	}
 
-	_, err = remote.List(&gogit.ListOptions{
-		Auth: r.auth,
-	})
+	listOptions := &gogit.ListOptions{}
+	if r.auth != nil {
+		listOptions.Auth = r.auth
+	}
+
+	_, err = remote.List(listOptions)
 	if err != nil {
 		return fmt.Errorf("remote is not working or auth failed: %w", err)
 	}
@@ -150,28 +119,28 @@ func (r DeploymentRepo) HasChanges() (bool, error) {
 	}
 
 	// Fetch the latest changes from the remote repository
-    err = repo.Fetch(&gogit.FetchOptions{
+	err = repo.Fetch(&gogit.FetchOptions{
 		RemoteName: "origin",
-        Auth: r.auth,
-		Tags: gogit.NoTags,
-		Force: false,
-		Prune: false,
+		Auth:       r.auth,
+		Tags:       gogit.NoTags,
+		Force:      false,
+		Prune:      false,
 	})
 	if err != nil {
-		if (err == gogit.NoErrAlreadyUpToDate) {
+		if err == gogit.NoErrAlreadyUpToDate {
 			return false, nil
 		}
 		return false, fmt.Errorf("fetch failed: %w", err)
 	}
 
 	// Get the local references for the main branch
-    localRef, err := repo.Reference(plumbing.ReferenceName("refs/heads/main"), true)
+	localRef, err := repo.Reference(plumbing.ReferenceName("refs/heads/main"), true)
 	if err != nil {
 		return false, fmt.Errorf("get local ref failed: %w", err)
 	}
 
 	// Get the remote references for the main branch
-    remoteRef, err := repo.Reference(plumbing.ReferenceName("refs/remotes/origin/main"), true)
+	remoteRef, err := repo.Reference(plumbing.ReferenceName("refs/remotes/origin/main"), true)
 	if err != nil {
 		return false, fmt.Errorf("get remote ref failed: %w", err)
 	}
@@ -191,20 +160,20 @@ func (r DeploymentRepo) filterComposeFiles(c object.Commit) ([]string, error) {
 		return nil, fmt.Errorf("get tree failed: %w", err)
 	}
 
-    // Iterate through the files in the tree
+	// Iterate through the files in the tree
 	var composeFiles []string
-    err = tree.Files().ForEach(func(f *object.File) error {
+	err = tree.Files().ForEach(func(f *object.File) error {
 		filename := path.Base(f.Name)
 		if filename == "docker-compose.yml" {
 			filepath := path.Join(r.path, f.Name)
 			composeFiles = append(composeFiles, filepath)
 		}
 		return nil
-    })
-    if err != nil {
-        return nil, fmt.Errorf("walk tree failed: %w", err)
-    }
-	
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk tree failed: %w", err)
+	}
+
 	return composeFiles, nil
 }
 
@@ -279,9 +248,8 @@ func (r DeploymentRepo) Pull() error {
 	return nil
 }
 
-
 // TODO: Use go-git instead of exec when this issue is resolved (https://github.com/go-git/go-git/pull/1235)
-func (r DeploymentRepo) pullGitGo() (error) {
+func (r DeploymentRepo) pullGitGo() error {
 	// Open the repository
 	repo, err := gogit.PlainOpen(r.path)
 	if err != nil {
@@ -296,10 +264,10 @@ func (r DeploymentRepo) pullGitGo() (error) {
 
 	// Pull the latest changes from the remote repository
 	err = w.Pull(&gogit.PullOptions{
-		RemoteName: "origin",
-		Auth: r.auth,
+		RemoteName:   "origin",
+		Auth:         r.auth,
 		SingleBranch: true,
-		Force: false,
+		Force:        false,
 	})
 	if err != nil {
 		if err == gogit.NoErrAlreadyUpToDate {

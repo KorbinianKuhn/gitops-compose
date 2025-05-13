@@ -36,7 +36,11 @@ func main() {
 	}
 
 	// Verify git repository
-	r, err := git.NewDeploymentRepo(config.RepositoryUsername, config.RepositoryPassword, config.RepositoryPath)
+	deploymentRepoOptions := []git.DeploymentRepoOption{}
+	if config.RepositoryUsername != "" {
+		deploymentRepoOptions = append(deploymentRepoOptions, git.WithAuth(config.RepositoryUsername, config.RepositoryPassword))
+	}
+	r, err := git.NewDeploymentRepo(config.RepositoryPath, deploymentRepoOptions...)
 	panicOnError("failed to create deployment repo", err)
 
 	// Verify git remote access
