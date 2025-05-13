@@ -4,11 +4,8 @@ services:
     ports:
       - 127.0.0.1:2112:2112
     environment:
-      REPOSITORY_USERNAME: ${REPOSITORY_USERNAME}
-      REPOSITORY_PASSWORD: ${REPOSITORY_PASSWORD}
-      DOCKER_REGISTRY_URL: ${DOCKER_REGISTRY_URL}
-      DOCKER_REGISTRY_USERNAME: ${DOCKER_REGISTRY_USERNAME}
-      DOCKER_REGISTRY_PASSWORD: ${DOCKER_REGISTRY_PASSWORD}
+      DOCKER_REGISTRIES: ${DOCKER_REGISTRIES}
     volumes:
+      - ./data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       - ./test-repos/temp-deployment:/repository

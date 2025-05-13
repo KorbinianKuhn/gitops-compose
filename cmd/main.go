@@ -31,16 +31,8 @@ func main() {
 	panicOnError("failed to load config", err)
 	slog.Info("config loaded")
 
-	// Get credentials from repository if not set
-	if config.RepositoryUsername == "" || config.RepositoryPassword == "" {
-		repoUsername, repoPassword := git.GetCredentialsFromRepository(config.RepositoryPath)
-
-		if repoUsername == "" || repoPassword == "" {
-			slog.Warn("no credentials set in environment or repository origin")
-		} else {
-			slog.Info("credentials set from repository origin")
-			config.SetCredentials(repoUsername, repoPassword)
-		}
+	if config.RepositoryUsername == "" {
+		slog.Warn("no credentials set in repository origin")
 	}
 
 	// Verify git repository
@@ -58,20 +50,20 @@ func main() {
 	slog.Info("deployment repo configured", "path", config.RepositoryPath)
 
 	// Verify docker socket connection
-	d := docker.NewDocker(config.DockerRegistryUrl, config.DockerRegistryUsername, config.DockerRegistryPassword)
+	d := docker.NewDocker(config.DockerRegistries)
 	panicOnError("failed to verify docker socket connection", d.VerifySocketConnection())
 	slog.Info("docker socket connection verified")
 
 	// Verify docker credentials (if set)
 	loggedIn, err := d.LoginIfCredentialsSet()
-	panicOnError("failed to verify docker credentials", err)
+	panicOnError("failed to verify docker registry credentials", err)
 	if loggedIn {
-		slog.Info("docker credentials verified", "url", config.DockerRegistryUrl)
+		slog.Info("docker registry credentials verified")
 	}
 
 	// Initialise metrics
 	m := metrics.NewMetrics()
-	if !config.DisableMetrics {
+	if config.MetricsEnabled {
 		http.Handle("/metrics", m.GetMetricsHandler())
 		slog.Info("metrics enabled", "url", "/metrics")
 	} else {
@@ -117,7 +109,7 @@ func main() {
 	}
 
 	// Webhook to trigger deployments
-	if !config.DisableWebhook {
+	if config.WebhookEnabled {
 		http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 			select {
 			case trigger <- struct{}{}:
@@ -133,13 +125,10 @@ func main() {
 	}
 
 	// TODO: Move to go routine
+	// TODO: Add health check endpoint
 	// Start http server
-	if !config.DisableMetrics || !config.DisableWebhook {
-		panicOnError("failed to start http server", http.ListenAndServe(":2112", nil))
-		slog.Info("starting http server", "port", "2112")
-	} else {
-		slog.Info("skipping http server")
-	}
+	panicOnError("failed to start http server", http.ListenAndServe(":2112", nil))
+	slog.Info("starting http server", "port", "2112")
 
 	// Wait for termination signal
 	osSignal := make(chan os.Signal, 1)

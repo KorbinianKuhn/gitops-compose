@@ -10,16 +10,18 @@ import (
 )
 
 type Docker struct {
-	url      string
-	username string
-	password string
+	registries []DockerRegistryCredentials
 }
 
-func NewDocker(url, username, password string) *Docker {
+type DockerRegistryCredentials struct {
+	Url      string `json:"url"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func NewDocker(registries []DockerRegistryCredentials) *Docker {
 	return &Docker{
-		url:      url,
-		username: username,
-		password: password,
+		registries: registries,
 	}
 }
 
@@ -48,7 +50,7 @@ func (d Docker) VerifySocketConnection() error {
 }
 
 func (d Docker) LoginIfCredentialsSet() (bool, error) {
-	if d.url == "" {
+	if len(d.registries) == 0 {
 		return false, nil
 	}
 
@@ -58,15 +60,17 @@ func (d Docker) LoginIfCredentialsSet() (bool, error) {
 	}
 	defer cli.Close()
 
-	authConfig := registry.AuthConfig{
-		Username:      d.username,
-		Password:      d.password,
-		ServerAddress: d.url,
-	}
+	for _, r := range d.registries {
+		authConfig := registry.AuthConfig{
+			Username:      r.Username,
+			Password:      r.Password,
+			ServerAddress: r.Url,
+		}
 
-	_, err = cli.RegistryLogin(context.Background(), authConfig)
-	if err != nil {
-		return false, fmt.Errorf("docker login failed: %w", err)
+		_, err = cli.RegistryLogin(context.Background(), authConfig)
+		if err != nil {
+			return false, fmt.Errorf("docker login failed: %w", err)
+		}
 	}
 
 	return true, nil
