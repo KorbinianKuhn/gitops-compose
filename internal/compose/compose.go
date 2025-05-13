@@ -37,7 +37,7 @@ func (c ComposeFile) LoadProject() (*types.Project, error) {
 		cli.WithInterpolation(true),
 		cli.WithResolvedPaths(true),
 	}
-	
+
 	envFilePath := filepath.Join(workingDirectory, ".env")
 	if _, err := os.Stat(envFilePath); err == nil {
 		optionsFns = append(optionsFns, cli.WithEnvFiles(envFilePath), cli.WithDotEnv)
@@ -111,8 +111,8 @@ func (c ComposeFile) IsRunning() (bool, error) {
 	}
 
 	containers, err := service.Ps(ctx, project.Name, api.PsOptions{
-		Project: project,
-		All: true,
+		Project:  project,
+		All:      true,
 		Services: services,
 	})
 
@@ -134,7 +134,7 @@ func (c ComposeFile) IsRunning() (bool, error) {
 	return false, nil
 }
 
-func (c ComposeFile) Stop() (error) {
+func (c ComposeFile) Stop() error {
 	service, err := getService()
 	if err != nil {
 		return err
@@ -149,9 +149,9 @@ func (c ComposeFile) Stop() (error) {
 
 	if err := service.Down(ctx, project.Name, api.DownOptions{
 		RemoveOrphans: true,
-		Project: project,
-		Images: "local",
-		Volumes: false,
+		Project:       project,
+		Images:        "local",
+		Volumes:       false,
 	}); err != nil {
 		return fmt.Errorf("docker compose down failed: %w", err)
 	}
@@ -159,7 +159,7 @@ func (c ComposeFile) Stop() (error) {
 	return nil
 }
 
-func (c ComposeFile) Start() (error) {
+func (c ComposeFile) Start() error {
 	service, err := getService()
 	if err != nil {
 		return err
@@ -172,12 +172,12 @@ func (c ComposeFile) Start() (error) {
 
 	for i, s := range project.Services {
 		s.CustomLabels = map[string]string{
-			api.ProjectLabel: project.Name,
-			api.ServiceLabel: s.Name,
-			api.VersionLabel: api.ComposeVersion,
-			api.WorkingDirLabel: project.WorkingDir,
+			api.ProjectLabel:     project.Name,
+			api.ServiceLabel:     s.Name,
+			api.VersionLabel:     api.ComposeVersion,
+			api.WorkingDirLabel:  project.WorkingDir,
 			api.ConfigFilesLabel: strings.Join(project.ComposeFiles, ","),
-			api.OneoffLabel: "False", // default, will be overridden by `run` command
+			api.OneoffLabel:      "False", // default, will be overridden by `run` command
 		}
 		project.Services[i] = s
 	}
@@ -186,16 +186,16 @@ func (c ComposeFile) Start() (error) {
 
 	err = service.Up(ctx, project, api.UpOptions{
 		Create: api.CreateOptions{
-			RemoveOrphans: true,
-			Recreate: api.RecreateForce,
+			RemoveOrphans:        true,
+			Recreate:             api.RecreateForce,
 			RecreateDependencies: api.RecreateForce,
-			QuietPull: true,
-			AssumeYes: true,
+			QuietPull:            true,
+			AssumeYes:            true,
 			// Timeout: time.Duration(180) * time.Second, // TODO: set timeout
 		},
 		Start: api.StartOptions{
-			Project: project,
-			Wait: true,
+			Project:     project,
+			Wait:        true,
 			WaitTimeout: time.Duration(180) * time.Second,
 		},
 	})

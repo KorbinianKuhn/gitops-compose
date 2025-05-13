@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrInvalidComposeFile = fmt.Errorf("invalid compose file")
+	ErrInvalidComposeFile     = fmt.Errorf("invalid compose file")
 	ErrUnknownDeploymentState = fmt.Errorf("unknown deployment state")
 )
 
@@ -24,17 +24,17 @@ const (
 )
 
 type Deployment struct {
-	docker docker.Docker
+	docker   docker.Docker
 	Filepath string
-	compose compose.ComposeFile
-	State DeploymentState
-	config DeploymentConfig
+	compose  compose.ComposeFile
+	State    DeploymentState
+	config   DeploymentConfig
 }
 
 type DeploymentConfig struct {
-	hash string
-	isValid bool
-	gitopsIgnore bool
+	hash             string
+	isValid          bool
+	gitopsIgnore     bool
 	gitopsController bool
 }
 
@@ -42,24 +42,24 @@ func NewDeployment(docker *docker.Docker, filepath string) *Deployment {
 	c := compose.NewComposeFile(filepath)
 
 	return &Deployment{
-		docker: *docker,
+		docker:   *docker,
 		Filepath: filepath,
-		compose: *c,
-		State: Unchanged,
-		config: DeploymentConfig{},
+		compose:  *c,
+		State:    Unchanged,
+		config:   DeploymentConfig{},
 	}
 }
 
-func (d *Deployment) LoadConfig() () {
+func (d *Deployment) LoadConfig() {
 	oldConfig := d.config
 
 	d.config = DeploymentConfig{
-		hash: "",
-		isValid: false,
-		gitopsIgnore: false,
+		hash:             "",
+		isValid:          false,
+		gitopsIgnore:     false,
 		gitopsController: false,
 	}
-	
+
 	project, err := d.compose.LoadProject()
 	if err != nil {
 		return
@@ -85,7 +85,6 @@ func (d *Deployment) LoadConfig() () {
 	d.config.hash = hex.EncodeToString(hash[:])
 	d.config.isValid = true
 
-
 	if oldConfig != (DeploymentConfig{}) {
 		if oldConfig.hash != d.config.hash {
 			d.State = Updated
@@ -95,11 +94,11 @@ func (d *Deployment) LoadConfig() () {
 	return
 }
 
-func (d *Deployment) IsIgnored() (bool) {
+func (d *Deployment) IsIgnored() bool {
 	return d.config.gitopsIgnore
 }
 
-func (d *Deployment) IsController() (bool) {
+func (d *Deployment) IsController() bool {
 	return d.config.gitopsController
 }
 
@@ -112,21 +111,22 @@ func (d *Deployment) Apply() (bool, error) {
 	}
 	if d.config.gitopsController {
 		switch d.State {
-			case Updated:
-				// TODO: start temporary container that restarts the controller
-				// if err := d.prepareImages(); err != nil {
-				// 	return false, err
-				// }
-				// if err := d.compose.StartWithDelay(); err != nil {
-				// 	return false, err
-				// }
-				return true, nil
-			default:
-				return false, nil
+		case Updated:
+			// TODO: start temporary container that restarts the controller
+			// if err := d.prepareImages(); err != nil {
+			// 	return false, err
+			// }
+			// if err := d.compose.StartWithDelay(); err != nil {
+			// 	return false, err
+			// }
+			return true, nil
+		default:
+			return false, nil
 		}
 	}
 	switch d.State {
-		case Added: {
+	case Added:
+		{
 			if err := d.prepareImages(); err != nil {
 				return false, err
 			}
@@ -135,14 +135,16 @@ func (d *Deployment) Apply() (bool, error) {
 			}
 			return true, nil
 		}
-		case Removed: {
+	case Removed:
+		{
 			wasStopped, err := d.ensureIsStopped()
 			if err != nil {
 				return false, err
 			}
 			return wasStopped, nil
 		}
-		case Updated: {
+	case Updated:
+		{
 			if err := d.prepareImages(); err != nil {
 				return false, err
 			}
@@ -156,7 +158,8 @@ func (d *Deployment) Apply() (bool, error) {
 			}
 			return wasStarted, nil
 		}
-		case Unchanged: {
+	case Unchanged:
+		{
 			wasStarted, err := d.ensureIsRunning()
 			if err != nil {
 				return false, err
@@ -167,7 +170,7 @@ func (d *Deployment) Apply() (bool, error) {
 	return false, ErrUnknownDeploymentState
 }
 
-func (d *Deployment) prepareImages() (error) {
+func (d *Deployment) prepareImages() error {
 	images, err := d.compose.ListImages()
 	if err != nil {
 		return err

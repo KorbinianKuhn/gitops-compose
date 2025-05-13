@@ -10,14 +10,14 @@ import (
 )
 
 type Docker struct {
-	url string
+	url      string
 	username string
 	password string
 }
 
 func NewDocker(url, username, password string) *Docker {
 	return &Docker{
-		url: url,
+		url:      url,
 		username: username,
 		password: password,
 	}
@@ -57,10 +57,10 @@ func (d Docker) LoginIfCredentialsSet() (bool, error) {
 		return false, err
 	}
 	defer cli.Close()
-	
+
 	authConfig := registry.AuthConfig{
-		Username: d.username,
-		Password: d.password,
+		Username:      d.username,
+		Password:      d.password,
 		ServerAddress: d.url,
 	}
 
