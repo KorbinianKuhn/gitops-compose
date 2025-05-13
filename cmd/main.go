@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,16 +44,15 @@ func main() {
 	}
 	r, err := git.NewDeploymentRepo(config.RepositoryPath, deploymentRepoOptions...)
 	panicOnError("failed to create deployment repo", err)
+	slog.Info("deployment repo initialised", "path", config.RepositoryPath)
 
 	// Verify git remote access
 	panicOnError("failed to verify git remote access", r.VerifyRemoteAccess())
-	slog.Info("git remote access verified")
 
 	// TODO: skip when go-git is able to pull changes without losing untracked files
 	// Verify git cli
 	panicOnError("failed to verify git cli", r.VerifyGitCli())
-
-	slog.Info("deployment repo configured", "path", config.RepositoryPath)
+	slog.Info("git remote access verified")
 
 	// Verify docker socket connection
 	d := docker.NewDocker(config.DockerRegistries)
@@ -84,18 +85,20 @@ func main() {
 		m.TrackCheckStatus("success")
 	}
 
-	trigger := make(chan struct{})
+	wg := sync.WaitGroup{}
+	check := make(chan struct{})
 
 	// Run gitops check on trigger
+	wg.Add(1)
 	go func() {
-		for range trigger {
+		for range check {
 			if err := g.CheckAndUpdateDeployments(); err != nil {
 				m.TrackCheckStatus("error")
 			} else {
 				m.TrackCheckStatus("success")
 			}
 		}
-		// TODO: graceful shutdown wait group
+		wg.Done()
 	}()
 
 	// Run gitops check on interval
@@ -105,7 +108,7 @@ func main() {
 			ticker := time.NewTicker(time.Duration(config.CheckIntervalInSeconds) * time.Second)
 			defer ticker.Stop()
 			for range ticker.C {
-				trigger <- struct{}{}
+				check <- struct{}{}
 			}
 		}()
 	} else {
@@ -116,7 +119,7 @@ func main() {
 	if config.WebhookEnabled {
 		http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 			select {
-			case trigger <- struct{}{}:
+			case check <- struct{}{}:
 				slog.Info("triggered check via webhook")
 			default:
 				slog.Info("ignored webhook as channel is already full")
@@ -128,18 +131,43 @@ func main() {
 		slog.Info("skipping webhook (disabled in config)")
 	}
 
-	// TODO: Move to go routine
-	// TODO: Add health check endpoint
+	// Health check endpoint
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	slog.Info("health check endpoint enabled", "url", "/health")
+
 	// Start http server
-	panicOnError("failed to start http server", http.ListenAndServe(":2112", nil))
+	s := http.Server{
+		Addr: ":2112",
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			panicOnError("failed to start http server", err)
+		}
+	}()
 	slog.Info("starting http server", "port", "2112")
 
 	// Wait for termination signal
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, syscall.SIGINT, syscall.SIGTERM)
+
 	<-osSignal
 	slog.Info("received termination signal, shutting down")
-	close(trigger)
 
-	// TODO: graceful shutdown wait group
+	close(check)
+
+	// Stop http server
+	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+	defer cancel()
+	if err := s.Shutdown(ctx); err != nil {
+		panicOnError("failed to shutdown http server", err)
+	}
+
+	// Run until shutdown is complete
+	wg.Wait()
+	slog.Info("gitops compose gracefully stopped")
 }
