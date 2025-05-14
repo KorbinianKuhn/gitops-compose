@@ -232,6 +232,7 @@ func (r DeploymentRepo) VerifyGitCli() error {
 	return nil
 }
 
+// TODO: Use go-git instead of exec when this issue is resolved (https://github.com/go-git/go-git/pull/1235)
 func (r DeploymentRepo) Pull() error {
 	cmd := exec.Command("git", "pull")
 	cmd.Dir = r.path
@@ -243,37 +244,6 @@ func (r DeploymentRepo) Pull() error {
 			return nil
 		}
 		return fmt.Errorf("pull failed: %w %s", err, output)
-	}
-
-	return nil
-}
-
-// TODO: Use go-git instead of exec when this issue is resolved (https://github.com/go-git/go-git/pull/1235)
-func (r DeploymentRepo) pullGitGo() error {
-	// Open the repository
-	repo, err := gogit.PlainOpen(r.path)
-	if err != nil {
-		return fmt.Errorf("open repo failed: %w", err)
-	}
-
-	// Get the working tree
-	w, err := repo.Worktree()
-	if err != nil {
-		return fmt.Errorf("get worktree failed: %w", err)
-	}
-
-	// Pull the latest changes from the remote repository
-	err = w.Pull(&gogit.PullOptions{
-		RemoteName:   "origin",
-		Auth:         r.auth,
-		SingleBranch: true,
-		Force:        false,
-	})
-	if err != nil {
-		if err == gogit.NoErrAlreadyUpToDate {
-			return nil
-		}
-		return fmt.Errorf("pull failed: %w", err)
 	}
 
 	return nil

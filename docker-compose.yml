@@ -6,6 +6,5 @@ services:
     environment:
       DOCKER_REGISTRIES: ${DOCKER_REGISTRIES}
     volumes:
-      - ./data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       - ./test-repos/temp-deployment:/repository

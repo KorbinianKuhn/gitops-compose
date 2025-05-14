@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
@@ -47,6 +48,25 @@ func (d Docker) VerifySocketConnection() error {
 	}
 
 	return nil
+}
+
+func (d Docker) IsDockerDesktop() (bool, error) {
+	cli, err := d.getClient()
+	if err != nil {
+		return false, err
+	}
+	defer cli.Close()
+
+	info, err := cli.Info(context.Background())
+	if err != nil {
+		return false, fmt.Errorf("failed to get docker info: %w", err)
+	}
+
+	if strings.Contains(strings.ToLower(info.OperatingSystem), "docker desktop") {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (d Docker) LoginIfCredentialsSet() (bool, error) {

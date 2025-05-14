@@ -29,35 +29,41 @@ func main() {
 	slog.Info("starting gitops compose")
 
 	// Load config
-	config, err := config.Get()
+	c, err := config.Get()
 	panicOnError("failed to load config", err)
 	slog.Info("config loaded")
 
-	if config.RepositoryUsername == "" {
+	if c.RepositoryUsername == "" {
 		slog.Warn("no credentials set in repository origin")
 	}
 
 	// Verify git repository
 	deploymentRepoOptions := []git.DeploymentRepoOption{}
-	if config.RepositoryUsername != "" {
-		deploymentRepoOptions = append(deploymentRepoOptions, git.WithAuth(config.RepositoryUsername, config.RepositoryPassword))
+	if c.RepositoryUsername != "" {
+		deploymentRepoOptions = append(deploymentRepoOptions, git.WithAuth(c.RepositoryUsername, c.RepositoryPassword))
 	}
-	r, err := git.NewDeploymentRepo(config.RepositoryPath, deploymentRepoOptions...)
+	r, err := git.NewDeploymentRepo(c.RepositoryPath, deploymentRepoOptions...)
 	panicOnError("failed to create deployment repo", err)
-	slog.Info("deployment repo initialised", "path", config.RepositoryPath)
+	slog.Info("deployment repo initialised", "path", c.RepositoryPath)
 
 	// Verify git remote access
 	panicOnError("failed to verify git remote access", r.VerifyRemoteAccess())
-
-	// TODO: skip when go-git is able to pull changes without losing untracked files
-	// Verify git cli
 	panicOnError("failed to verify git cli", r.VerifyGitCli())
 	slog.Info("git remote access verified")
 
 	// Verify docker socket connection
-	d := docker.NewDocker(config.DockerRegistries)
+	d := docker.NewDocker(c.DockerRegistries)
 	panicOnError("failed to verify docker socket connection", d.VerifySocketConnection())
 	slog.Info("docker socket connection verified")
+
+	// Warn if dockerised gitops-compose is running on docker desktop
+	if c.IsRunningInDocker {
+		isDockerDesktop, err := d.IsDockerDesktop()
+		panicOnError("failed to verify if docker is running in docker desktop", err)
+		if isDockerDesktop {
+			slog.Warn("docker is running in docker desktop (volume mounts might cause issues)")
+		}
+	}
 
 	// Verify docker credentials (if set)
 	loggedIn, err := d.LoginIfCredentialsSet()
@@ -68,11 +74,9 @@ func main() {
 
 	// Initialise metrics
 	m := metrics.NewMetrics()
-	if config.MetricsEnabled {
+	if c.MetricsEnabled {
 		http.Handle("/metrics", m.GetMetricsHandler())
 		slog.Info("metrics enabled", "url", "/metrics")
-	} else {
-		slog.Info("skipping metrics (disabled in config)")
 	}
 
 	// Initialise gitops
@@ -102,10 +106,10 @@ func main() {
 	}()
 
 	// Run gitops check on interval
-	if config.CheckIntervalInSeconds > 0 {
-		slog.Info(fmt.Sprintf("starting gitops repeated pull (every %s seconds)", fmt.Sprint(config.CheckIntervalInSeconds)))
+	if c.CheckIntervalInSeconds > 0 {
+		slog.Info(fmt.Sprintf("starting gitops repeated pull (every %s seconds)", fmt.Sprint(c.CheckIntervalInSeconds)))
 		go func() {
-			ticker := time.NewTicker(time.Duration(config.CheckIntervalInSeconds) * time.Second)
+			ticker := time.NewTicker(time.Duration(c.CheckIntervalInSeconds) * time.Second)
 			defer ticker.Stop()
 			for range ticker.C {
 				check <- struct{}{}
@@ -116,7 +120,7 @@ func main() {
 	}
 
 	// Webhook to trigger deployments
-	if config.WebhookEnabled {
+	if c.WebhookEnabled {
 		http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 			select {
 			case check <- struct{}{}:
@@ -127,15 +131,13 @@ func main() {
 			w.WriteHeader(http.StatusAccepted)
 		})
 		slog.Info("webhook enabled", "url", "/webhook")
-	} else {
-		slog.Info("skipping webhook (disabled in config)")
 	}
 
 	// Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	slog.Info("health check endpoint enabled", "url", "/health")
+	slog.Info("health check endpoint", "url", "/health")
 
 	// Start http server
 	s := http.Server{
@@ -149,7 +151,7 @@ func main() {
 			panicOnError("failed to start http server", err)
 		}
 	}()
-	slog.Info("starting http server", "port", "2112")
+	slog.Info("http server started", "port", "2112")
 
 	// Wait for termination signal
 	osSignal := make(chan os.Signal, 1)

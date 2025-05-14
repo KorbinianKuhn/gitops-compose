@@ -257,6 +257,7 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 			case deployment.Updated:
 				{
 					slog.Error("update controller deployment is not implemented yet", "file", d.Filepath)
+					// TODO: skip for docker desktop or non-docker use
 					// slog.Warn("scheduling controller deployment restart", "file", d.Filepath)
 					// _, err := d.Apply()
 					// if err != nil {

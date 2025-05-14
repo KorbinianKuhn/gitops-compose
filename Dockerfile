@@ -20,6 +20,8 @@ WORKDIR /gitops-compose
 
 COPY --from=builder /build /app
 
+ENV IS_RUNNING_IN_DOCKER=true
+
 EXPOSE 2112
 
 ENTRYPOINT ["/app"]

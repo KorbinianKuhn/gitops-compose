@@ -20,6 +20,7 @@ type Config struct {
 	WebhookEnabled         bool                    `default:"true" split_words:"true"`
 	MetricsEnabled         bool                    `default:"true" split_words:"true"`
 	DockerRegistries       DockerRegistriesDecoder `default:"[]" split_words:"true"`
+	IsRunningInDocker      bool                    `default:"false" split_words:"true"`
 }
 
 func getCredentialsFromRepository(path string) (string, string) {
