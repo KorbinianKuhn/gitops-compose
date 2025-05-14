@@ -7,4 +7,4 @@ services:
       DOCKER_REGISTRIES: ${DOCKER_REGISTRIES}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./test-repos/temp-deployment:/repository
+      - ./test-deployment:/repository
