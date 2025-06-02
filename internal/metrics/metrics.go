@@ -149,15 +149,15 @@ func (c *Metrics) TrackDeploymentState(state *DeploymentState) {
 	c.deploymentOperationsCounter.WithLabelValues("ignored").Add(float64(state.Ignored))
 }
 
-func (c *Metrics) GetMetricsHandler() http.Handler {
+func (m *Metrics) GetMetricsHandler() http.Handler {
 
 	var r = prometheus.NewRegistry()
 	r.MustRegister(
-		c.checkTimestamp,
-		c.checkCounter,
-		c.deploymentTimestamp,
-		c.activeDeploymentsGauge,
-		c.deploymentOperationsCounter,
+		m.checkTimestamp,
+		m.checkCounter,
+		m.deploymentTimestamp,
+		m.activeDeploymentsGauge,
+		m.deploymentOperationsCounter,
 	)
 
 	handler := promhttp.HandlerFor(r, promhttp.HandlerOpts{})
