@@ -160,6 +160,9 @@ func (d *Deployment) Apply() (bool, error) {
 		}
 	case Unchanged:
 		{
+			if err := d.prepareImages(); err != nil {
+				return false, err
+			}
 			wasStarted, err := d.ensureIsRunning()
 			if err != nil {
 				return false, err

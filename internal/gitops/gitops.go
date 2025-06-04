@@ -48,9 +48,9 @@ func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentSt
 	} else if err != nil {
 		state.Failed++
 		if d.State == deployment.Unchanged {
-			slog.Error("error checking unchanged deployment", "file", d.Filepath, "err", err.Error())
+			slog.Error("error checking unchanged deployment", "file", d.Filepath, "err", err)
 		} else {
-			slog.Error("error applying deployment change", "file", d.Filepath, "operation", operation, "err", err.Error())
+			slog.Error("error applying deployment change", "file", d.Filepath, "operation", operation, "err", err)
 		}
 		return
 	}
@@ -96,7 +96,7 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
 	// Check if there are any changes in the git repository
 	hasChanges, err := g.repo.HasChanges()
 	if err != nil {
-		slog.Error("error checking for changes", "err", err.Error())
+		slog.Error("error checking for changes", "err", err)
 		return err
 	}
 
@@ -108,7 +108,7 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
 	// Get local compose files
 	composeFiles, err := g.repo.GetLocalComposeFiles()
 	if err != nil {
-		slog.Error("error getting local compose files", "err", err.Error())
+		slog.Error("error getting local compose files", "err", err)
 		return err
 	}
 
@@ -146,7 +146,7 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 	// Check if there are any changes in the git repository
 	hasChanges, err := g.repo.HasChanges()
 	if err != nil {
-		slog.Error("error checking for git changes", "err", err.Error())
+		slog.Error("error checking for git changes", "err", err)
 		return err
 	}
 
@@ -161,13 +161,13 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 	// Get local and remote compose files
 	localComposeFiles, err := g.repo.GetLocalComposeFiles()
 	if err != nil {
-		slog.Error("error getting local compose files", "err", err.Error())
+		slog.Error("error getting local compose files", "err", err)
 		return err
 	}
 
 	remoteComposeFiles, err := g.repo.GetRemoteComposeFiles()
 	if err != nil {
-		slog.Error("error getting remote compose files", "err", err.Error())
+		slog.Error("error getting remote compose files", "err", err)
 		return err
 	}
 
@@ -198,7 +198,7 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 	// Ensure docker login if credentials are set
 	_, err = g.docker.LoginIfCredentialsSet()
 	if err != nil {
-		slog.Error("error logging in to docker registry", "err", err.Error())
+		slog.Error("error logging in to docker registry", "err", err)
 		return err
 	}
 
@@ -214,7 +214,7 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 
 	// Pull Git changes
 	if err := g.repo.Pull(); err != nil {
-		slog.Error("error pulling changes", "err", err.Error())
+		slog.Error("error pulling changes", "err", err)
 		return err
 	}
 
@@ -261,7 +261,7 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 					// slog.Warn("scheduling controller deployment restart", "file", d.Filepath)
 					// _, err := d.Apply()
 					// if err != nil {
-					//     slog.Error("error updating controller deployment", "file", d.Filepath, "err", err.Error())
+					//     slog.Error("error updating controller deployment", "file", d.Filepath, "err", err)
 					//     state.Failed++
 					// }
 					// slog.Info("controller deployment scheduled, main process will exit soon")
