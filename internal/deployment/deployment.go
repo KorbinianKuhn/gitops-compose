@@ -50,7 +50,7 @@ func NewDeployment(docker *docker.Docker, filepath string) *Deployment {
 	}
 }
 
-func (d *Deployment) LoadConfig() {
+func (d *Deployment) LoadConfig() error {
 	oldConfig := d.config
 
 	d.config = DeploymentConfig{
@@ -62,12 +62,12 @@ func (d *Deployment) LoadConfig() {
 
 	project, err := d.compose.LoadProject()
 	if err != nil {
-		return
+		return fmt.Errorf("failed to load project from compose file %s: %w", d.Filepath, err)
 	}
 
 	projectYaml, err := project.MarshalYAML()
 	if err != nil {
-		return
+		return fmt.Errorf("failed to marshal compose project to YAML: %w", err)
 	}
 
 	for _, service := range project.Services {
@@ -91,7 +91,7 @@ func (d *Deployment) LoadConfig() {
 		}
 	}
 
-	return
+	return nil
 }
 
 func (d *Deployment) IsIgnored() bool {

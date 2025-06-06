@@ -32,18 +32,22 @@ func (c ComposeFile) LoadProject() (*types.Project, error) {
 	ctx := context.Background()
 
 	workingDirectory := path.Dir(c.Filepath)
-	optionsFns := []cli.ProjectOptionsFn{
-		cli.WithWorkingDirectory(workingDirectory),
-		cli.WithInterpolation(true),
-		cli.WithResolvedPaths(true),
-	}
+
+	optionsFns := []cli.ProjectOptionsFn{}
 
 	envFilePath := filepath.Join(workingDirectory, ".env")
 	if _, err := os.Stat(envFilePath); err == nil {
-		optionsFns = append(optionsFns, cli.WithEnvFiles(envFilePath), cli.WithDotEnv)
+		optionsFns = append(optionsFns,
+			cli.WithEnvFiles(envFilePath),
+			cli.WithDotEnv,
+		)
 	}
 
-	optionsFns = append(optionsFns, cli.WithInterpolation(true), cli.WithResolvedPaths(true))
+	optionsFns = append(optionsFns,
+		cli.WithInterpolation(true),
+		cli.WithWorkingDirectory(workingDirectory),
+		cli.WithResolvedPaths(true),
+	)
 
 	options, err := cli.NewProjectOptions(
 		[]string{c.Filepath},
@@ -124,7 +128,6 @@ func (c ComposeFile) IsRunning() (bool, error) {
 		return false, nil
 	}
 
-	// TODO: should we check for all containers or just one?
 	for _, container := range containers {
 		if container.State == "running" {
 			return true, nil
@@ -191,7 +194,7 @@ func (c ComposeFile) Start() error {
 			RecreateDependencies: api.RecreateForce,
 			QuietPull:            true,
 			AssumeYes:            true,
-			// Timeout: time.Duration(180) * time.Second, // TODO: set timeout
+			Timeout:              func() *time.Duration { d := time.Duration(180) * time.Second; return &d }(),
 		},
 		Start: api.StartOptions{
 			Project:     project,

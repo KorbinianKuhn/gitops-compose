@@ -123,7 +123,13 @@ func (g *GitOps) EnsureDeploymentsAreRunning() error {
 	// Ensure all deployments are running
 	for _, composeFile := range composeFiles {
 		d := deployment.NewDeployment(g.docker, composeFile)
-		d.LoadConfig()
+
+		err := d.LoadConfig()
+		if err != nil {
+			slog.Error("error loading deployment config", "file", d.Filepath, "err", err)
+			state.Invalid++
+			continue
+		}
 
 		if d.IsController() {
 			slog.Info("skipping controller deployment", "file", d.Filepath)
@@ -175,7 +181,12 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 	deployments := []*deployment.Deployment{}
 	for _, localFile := range localComposeFiles {
 		d := deployment.NewDeployment(g.docker, localFile)
-		d.LoadConfig()
+
+		err := d.LoadConfig()
+		if err != nil {
+			slog.Error("error loading deployment config", "file", d.Filepath, "err", err)
+		}
+
 		if !slices.Contains(remoteComposeFiles, localFile) {
 			d.State = deployment.Removed
 		}
@@ -221,7 +232,10 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 	// Update deployment states (check if compose files are valid and if they changed)
 	for _, d := range deployments {
 		if d.State != deployment.Removed {
-			d.LoadConfig()
+			err := d.LoadConfig()
+			if err != nil {
+				slog.Error("error loading deployment config", "file", d.Filepath, "err", err)
+			}
 		}
 	}
 

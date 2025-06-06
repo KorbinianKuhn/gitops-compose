@@ -82,7 +82,6 @@ func NewMetrics() *Metrics {
 	metrics.deploymentOperationsCounter.WithLabelValues("updated").Add(0)
 	metrics.deploymentOperationsCounter.WithLabelValues("failed").Add(0)
 	metrics.deploymentOperationsCounter.WithLabelValues("invalid").Add(0)
-	metrics.deploymentOperationsCounter.WithLabelValues("ignored").Add(0)
 
 	return metrics
 }
@@ -146,7 +145,6 @@ func (c *Metrics) TrackDeploymentState(state *DeploymentState) {
 	c.deploymentOperationsCounter.WithLabelValues("updated").Add(float64(state.Updated))
 	c.deploymentOperationsCounter.WithLabelValues("failed").Add(float64(state.Failed))
 	c.deploymentOperationsCounter.WithLabelValues("invalid").Add(float64(state.Invalid))
-	c.deploymentOperationsCounter.WithLabelValues("ignored").Add(float64(state.Ignored))
 }
 
 func (m *Metrics) GetMetricsHandler() http.Handler {

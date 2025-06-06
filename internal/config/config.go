@@ -2,8 +2,10 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
@@ -14,7 +16,7 @@ import (
 
 type Config struct {
 	CheckIntervalInSeconds int                     `default:"300" split_words:"true"`
-	RepositoryPath         string                  `default:"/repository" split_words:"true"`
+	RepositoryPath         string                  `required:"true" split_words:"true"`
 	RepositoryUsername     string                  `ignored:"true"`
 	RepositoryPassword     string                  `ignored:"true"`
 	WebhookEnabled         bool                    `default:"true" split_words:"true"`
@@ -84,6 +86,12 @@ func Get() (*Config, error) {
 
 	if err := envconfig.Process("", &config); err != nil {
 		return nil, err
+	}
+
+	if config.IsRunningInDocker {
+		if !filepath.IsAbs(config.RepositoryPath) {
+			return nil, fmt.Errorf("repository path must be absolute when running in Docker, got: %s", config.RepositoryPath)
+		}
 	}
 
 	// Get credentials from repository origin

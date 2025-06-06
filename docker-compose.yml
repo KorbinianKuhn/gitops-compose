@@ -5,6 +5,7 @@ services:
       - 127.0.0.1:2112:2112
     environment:
       DOCKER_REGISTRIES: ${DOCKER_REGISTRIES}
+      REPOSITORY_PATH: ${PWD}/test-deployment
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./test-deployment:/repository
+      - ${PWD}/test-deployment:${PWD}/test-deployment

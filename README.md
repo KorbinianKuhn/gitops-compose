@@ -22,6 +22,7 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
 - 📌 Pinned image versions are recommended. If you use `:latest`, somehow change compose.yml to trigger changes.
 - ⚠️ Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
 - 🏷️ Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`
+- 🔧 When running with docker, paths likely mismatch between host and container, leading to deployment errors. It is therefore required to set an environment variable and ensure correct volume mounts (see configuration example below).
 
 ### HTTP server
 
@@ -60,13 +61,13 @@ Maintain a GIT repository to store all deployments on your host:
 
 ### Environment variables
 
-| Variable                  | Default     | Required | Description                                                                  |
-| ------------------------- | ----------- | -------- | ---------------------------------------------------------------------------- |
-| CHECK_INTERVAL_IN_SECONDS | 300         | no       | -1 disables the repeated check                                               |
-| REPOSITORY_PATH           | /repository | no       | Container internal path for the git repository                               |
-| DOCKER_REGISTRIES         | []          | no       | List of docker registry credentials [{url: "", username: "", password: "" }] |
-| WEBHOOK_ENABLED           | true        | no       | Enables the /webhook endpoint                                                |
-| METRICS_ENABLED           | true        | no       | Enables the /metrics endpoint                                                |
+| Variable                  | Default | Required | Description                                                                              |
+| ------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------- |
+| REPOSITORY_PATH           |         | yes      | Container internal path for the git repository (must be absolute when running in docker) |
+| CHECK_INTERVAL_IN_SECONDS | 300     | no       | -1 disables the repeated check                                                           |
+| DOCKER_REGISTRIES         | []      | no       | List of docker registry credentials [{url: "", username: "", password: "" }]             |
+| WEBHOOK_ENABLED           | true    | no       | Enables the /webhook endpoint                                                            |
+| METRICS_ENABLED           | true    | no       | Enables the /metrics endpoint                                                            |
 
 ### Configuration
 
@@ -94,9 +95,10 @@ services:
       - ${GID_DOCKER}
     environment:
       DOCKER_REGISTRIES: ${DOCKER_REGISTRIES}
+      REPOSITORY_PATH: ${PWD}/deployments
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./deployments:/repository
+      - ${PWD}/deployments:${PWD}/deployments
     labels:
       - "gitops.controller=true"
 ```
@@ -128,7 +130,6 @@ gitops_deployments_change_timestamp_seconds{status="success"} 0
 # TYPE gitops_deployments_operations_total counter
 gitops_deployments_operations_total{operation="failed"} 0
 gitops_deployments_operations_total{operation="ignored"} 1
-gitops_deployments_operations_total{operation="invalid"} 0
 gitops_deployments_operations_total{operation="started"} 4
 gitops_deployments_operations_total{operation="stopped"} 0
 gitops_deployments_operations_total{operation="updated"} 0
