@@ -3,9 +3,11 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
@@ -14,6 +16,9 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 )
 
+type LogFormatDecoder string
+
+type LogLevelDecoder slog.Level
 type Config struct {
 	CheckIntervalInSeconds int                     `default:"300" split_words:"true"`
 	RepositoryPath         string                  `required:"true" split_words:"true"`
@@ -23,6 +28,8 @@ type Config struct {
 	MetricsEnabled         bool                    `default:"true" split_words:"true"`
 	DockerRegistries       DockerRegistriesDecoder `default:"[]" split_words:"true"`
 	IsRunningInDocker      bool                    `default:"false" split_words:"true"`
+	LogFormat              LogFormatDecoder        `default:"text" split_words:"true"`
+	LogLevel               LogLevelDecoder         `default:"info" split_words:"true"`
 }
 
 func getCredentialsFromRepository(path string) (string, string) {
@@ -76,6 +83,34 @@ func (d *DockerRegistriesDecoder) Decode(value string) error {
 
 	*d = DockerRegistriesDecoder(registries)
 
+	return nil
+}
+
+func (f *LogFormatDecoder) UnmarshalText(text []byte) error {
+	value := strings.ToLower(string(text))
+	switch value {
+	case "json", "text", "console":
+		*f = LogFormatDecoder(value)
+		return nil
+	default:
+		return fmt.Errorf("invalid log format: %s", value)
+	}
+}
+
+func (l *LogLevelDecoder) UnmarshalText(text []byte) error {
+	value := strings.ToLower(string(text))
+	switch value {
+	case "debug":
+		*l = LogLevelDecoder(slog.LevelDebug)
+	case "info":
+		*l = LogLevelDecoder(slog.LevelInfo)
+	case "warn":
+		*l = LogLevelDecoder(slog.LevelWarn)
+	case "error":
+		*l = LogLevelDecoder(slog.LevelError)
+	default:
+		return fmt.Errorf("invalid log level: %s", value)
+	}
 	return nil
 }
 

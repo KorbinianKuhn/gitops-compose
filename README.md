@@ -68,6 +68,8 @@ Maintain a GIT repository to store all deployments on your host:
 | DOCKER_REGISTRIES         | []      | no       | List of docker registry credentials [{url: "", username: "", password: "" }]             |
 | WEBHOOK_ENABLED           | true    | no       | Enables the /webhook endpoint                                                            |
 | METRICS_ENABLED           | true    | no       | Enables the /metrics endpoint                                                            |
+| LOG_FORMAT                | text    | no       | Possible values: text (logfmt), json, console                                            |
+| LOG_LEVEL                 | info    | no       | Possible values: debug, info, warn, error                                                |
 
 ### Configuration
 

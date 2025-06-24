@@ -26,12 +26,23 @@ func panicOnError(message string, err error) {
 }
 
 func main() {
-	slog.Info("starting gitops compose")
-
 	// Load config
 	c, err := config.Get()
 	panicOnError("failed to load config", err)
-	slog.Info("config loaded")
+
+	// Set logger
+	switch c.LogFormat {
+	case "text":
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.Level(c.LogLevel),
+		})))
+	case "json":
+		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.Level(c.LogLevel),
+		})))
+	default:
+		slog.SetLogLoggerLevel(slog.Level(c.LogLevel))
+	}
 
 	if c.RepositoryUsername == "" {
 		slog.Warn("no credentials set in repository origin")
