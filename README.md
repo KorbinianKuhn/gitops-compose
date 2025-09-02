@@ -105,6 +105,34 @@ services:
       - "gitops.controller=true"
 ```
 
+service/docker-compose.yml
+
+```yaml
+services:
+  traefik:
+    image: traefik
+```
+
+### Watch additional files
+
+To detect changes in files that are not resolved by docker-compose automatically, add `x-gitops`compose extensions:
+
+```yaml
+# Root level files
+x-gitops:
+  watch:
+    - config.yaml
+services:
+  nginx:
+    image: nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    # Service level files
+    x-gitops:
+      watch:
+        - ./nginx.conf
+```
+
 ## Monitoring
 
 Prometheus metrics are exported under [localhost:2112/metrics](localhost:2112/metrics):

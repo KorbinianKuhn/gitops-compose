@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/korbiniankuhn/gitops-compose/internal/compose"
 	"github.com/korbiniankuhn/gitops-compose/internal/docker"
@@ -81,8 +83,20 @@ func (d *Deployment) LoadConfig() error {
 		}
 	}
 
-	hash := sha256.Sum256(projectYaml)
-	d.config.hash = hex.EncodeToString(hash[:])
+	hash := sha256.New()
+	hash.Write(projectYaml)
+
+	watchFiles := d.compose.GetWatchFiles(project)
+	for _, filepath := range watchFiles {
+		f, err := os.Open(filepath)
+		if err != nil {
+			continue
+		}
+		io.Copy(hash, f)
+		f.Close()
+	}
+
+	d.config.hash = hex.EncodeToString(hash.Sum(nil)[:])
 	d.config.isValid = true
 
 	if oldConfig != (DeploymentConfig{}) {

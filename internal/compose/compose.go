@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/compose/v2/pkg/api"
 	"github.com/docker/compose/v2/pkg/compose"
+	"gopkg.in/yaml.v2"
 )
 
 type ComposeFile struct {
@@ -63,6 +65,59 @@ func (c ComposeFile) LoadProject() (*types.Project, error) {
 	}
 
 	return project, nil
+}
+
+type GitopsWatchConfig struct {
+	Watch []string `yaml:"watch"`
+}
+
+func resolveWatchPath(projectDir, watchPath string) (string, error) {
+	if filepath.IsAbs(watchPath) {
+		return filepath.Clean(watchPath), nil
+	}
+	abs, err := filepath.Abs(filepath.Join(projectDir, watchPath))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
+}
+
+func (c ComposeFile) GetWatchFiles(project *types.Project) []string {
+	var watchFiles []string
+
+	// Root-level x-gitops.watch
+	if raw, ok := project.Extensions["x-gitops"]; ok {
+		var cfg GitopsWatchConfig
+		bytes, _ := yaml.Marshal(raw)
+		if err := yaml.Unmarshal(bytes, &cfg); err != nil {
+			slog.Warn("Failed to unmarshal x-gitops:", "compose", c.Filepath, "error", err)
+		}
+		watchFiles = append(watchFiles, cfg.Watch...)
+	}
+
+	// Service-level x-gitops.watch
+	for _, service := range project.Services {
+		if raw, ok := service.Extensions["x-gitops"]; ok {
+			var cfg GitopsWatchConfig
+			bytes, _ := yaml.Marshal(raw)
+			if err := yaml.Unmarshal(bytes, &cfg); err != nil {
+				slog.Warn("Failed to unmarshal x-gitops:", "compose", c.Filepath, "service", service.Name, "error", err)
+			}
+			watchFiles = append(watchFiles, cfg.Watch...)
+		}
+	}
+
+	var resolvedWatchFiles []string
+	for _, f := range watchFiles {
+		resolved, err := resolveWatchPath(project.WorkingDir, f)
+		if err != nil {
+			slog.Warn("Failed to resolve watch path:", "path", f, "error", err)
+			continue
+		}
+		resolvedWatchFiles = append(resolvedWatchFiles, resolved)
+	}
+
+	return resolvedWatchFiles
 }
 
 func (c ComposeFile) ListImages() ([]string, error) {
