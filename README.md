@@ -173,7 +173,7 @@ A prebuilt dashboard is [here](dashboard.json).
 
 ## Credits
 
-- [github.com/kimdre/doco-cd](github.com/kimdre/doco-cd) _GitopsCompose was inspired by doco-cd_
-- [github.com/go-git/go-git](github.com/go-git/go-git)
-- [github.com/docker](github.com/docker)
-- [github.com/compose-spec/compose-go](github.com/compose-spec/compose-go)
+- [https://github.com/kimdre/doco-cd](https://github.com/kimdre/doco-cd) _GitopsCompose was inspired by doco-cd_
+- [https://github.com/go-git/go-git](https://github.com/go-git/go-git)
+- [https://github.com/docker](https://github.com/docker)
+- [https://github.com/compose-spec/compose-go](https://github.com/compose-spec/compose-go)
