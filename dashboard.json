@@ -1,4 +1,61 @@
 {
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "loki",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "gauge",
+      "name": "Gauge",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "12.1.1"
+    },
+    {
+      "type": "panel",
+      "id": "logs",
+      "name": "Logs",
+      "version": ""
+    },
+    {
+      "type": "datasource",
+      "id": "loki",
+      "name": "Loki",
+      "version": "12.1.1"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    }
+  ],
   "annotations": {
     "list": [
       {
@@ -18,13 +75,13 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 36,
+  "id": null,
   "links": [],
   "panels": [
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -36,7 +93,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text"
+                "color": "text",
+                "value": 0
               },
               {
                 "color": "red",
@@ -58,7 +116,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "orange"
+                      "color": "orange",
+                      "value": 0
                     },
                     {
                       "color": "green",
@@ -81,7 +140,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "text"
+                      "color": "text",
+                      "value": 0
                     },
                     {
                       "color": "blue",
@@ -96,7 +156,7 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 9,
+        "w": 12,
         "x": 0,
         "y": 0
       },
@@ -114,13 +174,17 @@
         "showThresholdMarkers": true,
         "sizing": "auto"
       },
-      "pluginVersion": "12.0.0-86898",
+      "pluginVersion": "12.1.1",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "gitops_deployments_active_total{status=\"running\"}",
+          "expr": "sum by (status) (gitops_deployments_active_total{status=\"running\",instance=~\"$instance\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": true,
@@ -132,11 +196,11 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "gitops_deployments_active_total{status!=\"running\"}",
+          "expr": "sum by (status) (gitops_deployments_active_total{status!=\"running\",instance=~\"$instance\"})",
           "hide": false,
           "instant": true,
           "legendFormat": "{{status}}",
@@ -150,7 +214,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -175,7 +239,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text"
+                "color": "text",
+                "value": 0
               }
             ]
           },
@@ -194,7 +259,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red"
+                      "color": "red",
+                      "value": 0
                     }
                   ]
                 }
@@ -213,7 +279,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "green"
+                      "color": "green",
+                      "value": 0
                     }
                   ]
                 }
@@ -224,8 +291,8 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 9,
-        "x": 9,
+        "w": 12,
+        "x": 12,
         "y": 0
       },
       "id": 6,
@@ -244,13 +311,17 @@
         "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "12.0.0-86898",
+      "pluginVersion": "12.1.1",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "(time() - gitops_deployments_change_timestamp_seconds) * (gitops_deployments_change_timestamp_seconds != bool 0)",
+          "expr": "min by (status) ((time() - gitops_deployments_change_timestamp_seconds{instance=~\"$instance\"}) * (gitops_deployments_change_timestamp_seconds{instance=~\"$instance\"} != bool 0))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": true,
@@ -266,19 +337,21 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text"
+                "color": "text",
+                "value": 0
               },
               {
                 "color": "green",
@@ -300,7 +373,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "text"
+                      "color": "text",
+                      "value": 0
                     },
                     {
                       "color": "red",
@@ -323,7 +397,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "text"
+                      "color": "text",
+                      "value": 0
                     },
                     {
                       "color": "red",
@@ -346,7 +421,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "text"
+                      "color": "text",
+                      "value": 0
                     },
                     {
                       "color": "blue",
@@ -361,7 +437,7 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 18,
+        "w": 24,
         "x": 0,
         "y": 5
       },
@@ -381,13 +457,17 @@
         "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "12.0.0-86898",
+      "pluginVersion": "12.1.1",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "disableTextWrap": false,
-          "editorMode": "builder",
+          "editorMode": "code",
           "exemplar": false,
-          "expr": "gitops_deployments_operations_total",
+          "expr": "sum by (operation) (increase(gitops_deployments_operations_total{instance=~\"$instance\"}[24h]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": true,
@@ -397,13 +477,13 @@
           "useBackend": false
         }
       ],
-      "title": "Deployment Operations Total",
+      "title": "Deployment Operations (24h)",
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -416,7 +496,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red"
+                "color": "red",
+                "value": 0
               },
               {
                 "color": "green",
@@ -438,7 +519,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "text"
+                      "color": "text",
+                      "value": 0
                     },
                     {
                       "color": "red",
@@ -453,7 +535,7 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 9,
+        "w": 12,
         "x": 0,
         "y": 10
       },
@@ -471,17 +553,17 @@
         "showThresholdMarkers": true,
         "sizing": "auto"
       },
-      "pluginVersion": "12.0.0-86898",
+      "pluginVersion": "12.1.1",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "increase(gitops_check_total[24h])",
+          "expr": "sum by (status) (increase(gitops_check_total{instance=~\"$instance\"}[24h]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": true,
@@ -497,7 +579,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -532,7 +614,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text"
+                "color": "text",
+                "value": 0
               }
             ]
           },
@@ -551,7 +634,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red"
+                      "color": "red",
+                      "value": 0
                     }
                   ]
                 }
@@ -570,7 +654,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "green"
+                      "color": "green",
+                      "value": 0
                     }
                   ]
                 }
@@ -581,8 +666,8 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 9,
-        "x": 9,
+        "w": 12,
+        "x": 12,
         "y": 10
       },
       "id": 16,
@@ -601,13 +686,17 @@
         "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "12.0.0-86898",
+      "pluginVersion": "12.1.1",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "(time() - gitops_check_timestamp_seconds) * (gitops_check_timestamp_seconds != bool 0)",
+          "expr": "min by (status) ((time() - gitops_check_timestamp_seconds{instance=~\"$instance\"}) * (gitops_check_timestamp_seconds{instance=~\"$instance\"} != bool 0))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": true,
@@ -619,13 +708,73 @@
       ],
       "title": "Time Since Last Check (by status)",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "id": 17,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.1.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{container=\"gitops-compose\",instance=~\"$instance\"}\n| label_format timestamp=\"{{__timestamp__}}\"\n| line_format `{{.instance}}/{{.container}}: {{__line__}}`",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Logs",
+      "type": "logs"
     }
   ],
-  "preload": false,
   "schemaVersion": 41,
-  "tags": ["gitops"],
+  "tags": ["gitops", "prometheus", "loki"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(gitops_check_total,instance)",
+        "includeAll": true,
+        "label": "Instance",
+        "name": "instance",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(gitops_check_total,instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",
@@ -634,6 +783,7 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Gitops",
-  "uid": "8936b722-54ee-4597-aa90-d7cb64dad019",
-  "version": 25
+  "uid": "gitops-compose",
+  "version": 2,
+  "weekStart": ""
 }
