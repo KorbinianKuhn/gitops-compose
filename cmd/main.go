@@ -26,6 +26,11 @@ func panicOnError(message string, err error) {
 }
 
 func main() {
+	// Default logger (will be overwritten during config load)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+
 	// Load config
 	c, err := config.Get()
 	panicOnError("failed to load config", err)
@@ -93,13 +98,6 @@ func main() {
 	// Initialise gitops
 	g := gitops.NewGitOps(r, d, m)
 
-	if err := g.EnsureDeploymentsAreRunning(); err != nil {
-		m.TrackCheckStatus("error")
-		slog.Error("failed to ensure deployments are running on initial start", "error", err)
-	} else {
-		m.TrackCheckStatus("success")
-	}
-
 	wg := sync.WaitGroup{}
 	check := make(chan struct{})
 
@@ -107,14 +105,13 @@ func main() {
 	wg.Add(1)
 	go func() {
 		for range check {
-			if err := g.CheckAndUpdateDeployments(); err != nil {
-				m.TrackCheckStatus("error")
-			} else {
-				m.TrackCheckStatus("success")
-			}
+			g.CheckAndUpdate()
 		}
 		wg.Done()
 	}()
+
+	// Run check on start
+	check <- struct{}{}
 
 	// Run gitops check on interval
 	if c.CheckIntervalInSeconds > 0 {

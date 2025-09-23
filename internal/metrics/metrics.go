@@ -13,6 +13,7 @@ type Metrics struct {
 	deploymentTimestamp         *prometheus.GaugeVec
 	activeDeploymentsGauge      *prometheus.GaugeVec
 	deploymentOperationsCounter *prometheus.CounterVec
+	State                       *DeploymentState
 }
 
 func NewMetrics() *Metrics {
@@ -62,6 +63,7 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"operation"},
 		),
+		State: newState(),
 	}
 
 	metrics.checkCounter.WithLabelValues("success").Add(0)
@@ -101,7 +103,7 @@ type DeploymentState struct {
 	Ignored   int
 }
 
-func NewState() *DeploymentState {
+func newState() *DeploymentState {
 	return &DeploymentState{
 		Unchanged: 0,
 		Started:   0,
@@ -111,6 +113,16 @@ func NewState() *DeploymentState {
 		Invalid:   0,
 		Ignored:   0,
 	}
+}
+
+func (s *DeploymentState) Reset() {
+	s.Unchanged = 0
+	s.Started = 0
+	s.Stopped = 0
+	s.Updated = 0
+	s.Failed = 0
+	s.Invalid = 0
+	s.Ignored = 0
 }
 
 func (s *DeploymentState) HasErrors() bool {
@@ -125,26 +137,26 @@ func (s *DeploymentState) CountRunning() int {
 	return s.Unchanged + s.Started + s.Updated
 }
 
-func (c *Metrics) TrackDeploymentState(state *DeploymentState) {
+func (c *Metrics) UpdateMetrics() {
 	// Timestamps
-	if state.HasErrors() {
+	if c.State.HasErrors() {
 		c.deploymentTimestamp.WithLabelValues("error").SetToCurrentTime()
-	} else if state.HasChanges() {
+	} else if c.State.HasChanges() {
 		c.deploymentTimestamp.WithLabelValues("success").SetToCurrentTime()
 	}
 
 	// Active states
-	c.activeDeploymentsGauge.WithLabelValues("running").Set(float64(state.CountRunning()))
-	c.activeDeploymentsGauge.WithLabelValues("failed").Set(float64(state.Failed))
-	c.activeDeploymentsGauge.WithLabelValues("invalid").Set(float64(state.Invalid))
-	c.activeDeploymentsGauge.WithLabelValues("ignored").Set(float64(state.Ignored))
+	c.activeDeploymentsGauge.WithLabelValues("running").Set(float64(c.State.CountRunning()))
+	c.activeDeploymentsGauge.WithLabelValues("failed").Set(float64(c.State.Failed))
+	c.activeDeploymentsGauge.WithLabelValues("invalid").Set(float64(c.State.Invalid))
+	c.activeDeploymentsGauge.WithLabelValues("ignored").Set(float64(c.State.Ignored))
 
 	// Operations
-	c.deploymentOperationsCounter.WithLabelValues("started").Add(float64(state.Started))
-	c.deploymentOperationsCounter.WithLabelValues("stopped").Add(float64(state.Stopped))
-	c.deploymentOperationsCounter.WithLabelValues("updated").Add(float64(state.Updated))
-	c.deploymentOperationsCounter.WithLabelValues("failed").Add(float64(state.Failed))
-	c.deploymentOperationsCounter.WithLabelValues("invalid").Add(float64(state.Invalid))
+	c.deploymentOperationsCounter.WithLabelValues("started").Add(float64(c.State.Started))
+	c.deploymentOperationsCounter.WithLabelValues("stopped").Add(float64(c.State.Stopped))
+	c.deploymentOperationsCounter.WithLabelValues("updated").Add(float64(c.State.Updated))
+	c.deploymentOperationsCounter.WithLabelValues("failed").Add(float64(c.State.Failed))
+	c.deploymentOperationsCounter.WithLabelValues("invalid").Add(float64(c.State.Invalid))
 }
 
 func (m *Metrics) GetMetricsHandler() http.Handler {

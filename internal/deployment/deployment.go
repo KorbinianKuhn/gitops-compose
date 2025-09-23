@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"github.com/korbiniankuhn/gitops-compose/internal/compose"
@@ -14,6 +15,7 @@ import (
 var (
 	ErrInvalidComposeFile     = fmt.Errorf("invalid compose file")
 	ErrUnknownDeploymentState = fmt.Errorf("unknown deployment state")
+	ErrImagePullBackoff       = fmt.Errorf("image pull backoff")
 )
 
 type DeploymentState int
@@ -31,6 +33,7 @@ type Deployment struct {
 	compose  compose.ComposeFile
 	State    DeploymentState
 	config   DeploymentConfig
+	Error    error
 }
 
 type DeploymentConfig struct {
@@ -49,6 +52,7 @@ func NewDeployment(docker *docker.Docker, filepath string) *Deployment {
 		compose:  *c,
 		State:    Unchanged,
 		config:   DeploymentConfig{},
+		Error:    nil,
 	}
 }
 
@@ -118,33 +122,26 @@ func (d *Deployment) IsController() bool {
 
 func (d *Deployment) Apply() (bool, error) {
 	if !d.config.isValid {
+		d.Error = ErrInvalidComposeFile
 		return false, ErrInvalidComposeFile
 	}
 	if d.config.gitopsIgnore {
 		return false, nil
 	}
 	if d.config.gitopsController {
-		switch d.State {
-		case Updated:
-			// TODO: start temporary container that restarts the controller
-			// if err := d.prepareImages(); err != nil {
-			// 	return false, err
-			// }
-			// if err := d.compose.StartWithDelay(); err != nil {
-			// 	return false, err
-			// }
-			return true, nil
-		default:
-			return false, nil
-		}
+		// TODO: start temporary container that restarts the controller
+		return false, nil
 	}
 	switch d.State {
 	case Added:
 		{
 			if err := d.prepareImages(); err != nil {
-				return false, err
+				slog.Error("failed to prepare images for updated deployment", "file", d.Filepath, "err", err)
+				d.Error = ErrImagePullBackoff
+				return false, ErrImagePullBackoff
 			}
 			if err := d.compose.Start(); err != nil {
+				d.Error = err
 				return false, err
 			}
 			return true, nil
@@ -153,6 +150,7 @@ func (d *Deployment) Apply() (bool, error) {
 		{
 			wasStopped, err := d.ensureIsStopped()
 			if err != nil {
+				d.Error = err
 				return false, err
 			}
 			return wasStopped, nil
@@ -160,14 +158,17 @@ func (d *Deployment) Apply() (bool, error) {
 	case Updated:
 		{
 			if err := d.prepareImages(); err != nil {
+				d.Error = err
 				return false, err
 			}
 			_, err := d.ensureIsStopped()
 			if err != nil {
+				d.Error = err
 				return false, err
 			}
 			wasStarted, err := d.ensureIsRunning()
 			if err != nil {
+				d.Error = err
 				return false, err
 			}
 			return wasStarted, nil
@@ -175,15 +176,18 @@ func (d *Deployment) Apply() (bool, error) {
 	case Unchanged:
 		{
 			if err := d.prepareImages(); err != nil {
+				d.Error = err
 				return false, err
 			}
 			wasStarted, err := d.ensureIsRunning()
 			if err != nil {
+				d.Error = err
 				return false, err
 			}
 			return wasStarted, nil
 		}
 	}
+	d.Error = ErrUnknownDeploymentState
 	return false, ErrUnknownDeploymentState
 }
 
@@ -196,7 +200,8 @@ func (d *Deployment) prepareImages() error {
 	for _, image := range images {
 		err := d.docker.Pull(image)
 		if err != nil {
-			return err
+			slog.Error("failed to pull image", "image", image, "err", err)
+			return ErrImagePullBackoff
 		}
 	}
 

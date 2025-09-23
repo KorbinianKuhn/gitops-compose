@@ -12,6 +12,7 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
   4. ⬇️ Pull changes
   5. 🛠️ Detect changed deployments (added or modified)
   6. 🚀 Apply changes (pull images, eventually stop running stacks, start stack)
+     - ♻️ Repeatedly retry when image pull fails
 
 > GitopsCompose tries to exit early when errors occur (e.g. when the local repository is not clean). When it proceeds to step 3, errors are tracked but all operations continue (e.g. a failed stop of a removed deployment will not prevent other stacks to be updated).
 
@@ -23,6 +24,7 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
 - ⚠️ Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
 - 🏷️ Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`
 - 🔧 When running with docker, paths likely mismatch between host and container, leading to deployment errors. It is therefore required to set an environment variable and ensure correct volume mounts (see configuration example below).
+- ♻️ Rolling Updates: Images are pulled before deployments are stopped (if pull fails, a repeated pull in the given check interval is executed until new changes in the repo are detected). However, deployment fails after image pull result in a failed deployment state.
 
 ### HTTP server
 

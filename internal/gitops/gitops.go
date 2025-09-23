@@ -11,20 +11,24 @@ import (
 )
 
 type GitOps struct {
-	repo    *git.DeploymentRepo
-	docker  *docker.Docker
-	metrics *metrics.Metrics
+	repo             *git.DeploymentRepo
+	docker           *docker.Docker
+	metrics          *metrics.Metrics
+	retryDeployments []*deployment.Deployment
+	isFirstCheck     bool
 }
 
 func NewGitOps(repo *git.DeploymentRepo, docker *docker.Docker, metrics *metrics.Metrics) *GitOps {
 	return &GitOps{
-		repo:    repo,
-		docker:  docker,
-		metrics: metrics,
+		repo:             repo,
+		docker:           docker,
+		metrics:          metrics,
+		retryDeployments: []*deployment.Deployment{},
+		isFirstCheck:     true,
 	}
 }
 
-func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentState) {
+func (g *GitOps) applyDeploymentChange(d *deployment.Deployment) {
 	wasChanged, err := d.Apply()
 
 	var operation string
@@ -42,11 +46,11 @@ func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentSt
 	}
 
 	if err == deployment.ErrInvalidComposeFile {
-		state.Invalid++
+		g.metrics.State.Invalid++
 		slog.Error("invalid compose file", "file", d.Filepath)
 		return
 	} else if err != nil {
-		state.Failed++
+		g.metrics.State.Failed++
 		if d.State == deployment.Unchanged {
 			slog.Error("error checking unchanged deployment", "file", d.Filepath, "err", err)
 		} else {
@@ -58,123 +62,52 @@ func applyDeploymentChange(d *deployment.Deployment, state *metrics.DeploymentSt
 	switch d.State {
 	case deployment.Added:
 		if wasChanged {
-			state.Started++
+			g.metrics.State.Started++
 			slog.Info("started new deployment", "file", d.Filepath)
 		} else {
 			// Should never happen
-			state.Unchanged++
+			g.metrics.State.Unchanged++
 			slog.Warn("new deployment was already running", "file", d.Filepath)
 		}
 	case deployment.Updated:
 		if wasChanged {
-			state.Updated++
+			g.metrics.State.Updated++
 			slog.Info("updated deployment", "file", d.Filepath)
 		} else {
 			// Should never happen
-			state.Unchanged++
+			g.metrics.State.Unchanged++
 			slog.Warn("updated deployment was already running", "file", d.Filepath)
 		}
 	case deployment.Removed:
 		if wasChanged {
-			state.Stopped++
+			g.metrics.State.Stopped++
 			slog.Info("stopped removed deployment", "file", d.Filepath)
 		} else {
-			state.Unchanged++
+			g.metrics.State.Unchanged++
 			slog.Warn("removed deployment was not running", "file", d.Filepath)
 		}
 	case deployment.Unchanged:
 		if wasChanged {
-			state.Started++
+			g.metrics.State.Started++
 			slog.Warn("started unchanged but not running deployment", "file", d.Filepath)
 		} else {
-			state.Unchanged++
+			g.metrics.State.Unchanged++
 		}
 	}
 }
 
-func (g *GitOps) EnsureDeploymentsAreRunning() error {
-	// Check if there are any changes in the git repository
-	hasChanges, err := g.repo.HasChanges()
-	if err != nil {
-		slog.Error("error checking for changes", "err", err)
-		return err
-	}
-
-	// If there are changes, skip and let repeated check handle it
-	if hasChanges {
-		return err
-	}
-
-	// Get local compose files
-	composeFiles, err := g.repo.GetLocalComposeFiles()
-	if err != nil {
-		slog.Error("error getting local compose files", "err", err)
-		return err
-	}
-
-	slog.Info("ensuring deployments are running")
-
-	// Track deployment states
-	state := metrics.NewState()
-	defer func() {
-		g.metrics.TrackDeploymentState(state)
-	}()
-
-	// Ensure all deployments are running
-	for _, composeFile := range composeFiles {
-		d := deployment.NewDeployment(g.docker, composeFile)
-
-		err := d.LoadConfig()
-		if err != nil {
-			slog.Error("error loading deployment config", "file", d.Filepath, "err", err)
-			state.Invalid++
-			continue
-		}
-
-		if d.IsController() {
-			slog.Info("skipping controller deployment", "file", d.Filepath)
-			continue
-		}
-
-		if d.IsIgnored() {
-			state.Ignored++
-			slog.Info("skipping deployment due to gitops ignore label", "file", d.Filepath)
-			continue
-		}
-
-		applyDeploymentChange(d, state)
-	}
-
-	return nil
-}
-
-func (g *GitOps) CheckAndUpdateDeployments() error {
-	// Check if there are any changes in the git repository
-	hasChanges, err := g.repo.HasChanges()
-	if err != nil {
-		slog.Error("error checking for git changes", "err", err)
-		return err
-	}
-
-	// If there are no changes, return
-	if !hasChanges {
-		slog.Info("no git changes detected")
-		return nil
-	}
-
-	slog.Info("changes detected")
-
+func (g *GitOps) checkAndUpdateDeployments() ([]*deployment.Deployment, error) {
 	// Get local and remote compose files
 	localComposeFiles, err := g.repo.GetLocalComposeFiles()
 	if err != nil {
 		slog.Error("error getting local compose files", "err", err)
-		return err
+		return []*deployment.Deployment{}, err
 	}
 
 	remoteComposeFiles, err := g.repo.GetRemoteComposeFiles()
 	if err != nil {
 		slog.Error("error getting remote compose files", "err", err)
-		return err
+		return []*deployment.Deployment{}, err
 	}
 
 	// Determine which deployments to add, remove, or update
@@ -200,18 +133,15 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 		}
 	}
 
-	// Track deployment states
-	state := metrics.NewState()
-	defer func() {
-		g.metrics.TrackDeploymentState(state)
-	}()
-
 	// Ensure docker login if credentials are set
 	_, err = g.docker.LoginIfCredentialsSet()
 	if err != nil {
 		slog.Error("error logging in to docker registry", "err", err)
-		return err
+		return []*deployment.Deployment{}, err
 	}
+
+	// Track deployment states
+	g.metrics.State.Reset()
 
 	// Stop removed deployments
 	for _, d := range deployments {
@@ -219,14 +149,14 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 			continue
 		}
 		if d.State == deployment.Removed {
-			applyDeploymentChange(d, state)
+			g.applyDeploymentChange(d)
 		}
 	}
 
 	// Pull Git changes
 	if err := g.repo.Pull(); err != nil {
 		slog.Error("error pulling changes", "err", err)
-		return err
+		return deployments, err
 	}
 
 	// Update deployment states (check if compose files are valid and if they changed)
@@ -244,14 +174,14 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 		if d.IsIgnored() || d.IsController() || d.State == deployment.Removed {
 			continue
 		}
-		applyDeploymentChange(d, state)
+		g.applyDeploymentChange(d)
 	}
 
 	// Post deployment operations
 	for _, d := range deployments {
 		if d.IsIgnored() {
 			if d.State != deployment.Removed {
-				state.Ignored++
+				g.metrics.State.Ignored++
 				slog.Info("skipping deployment due to gitops ignore label", "file", d.Filepath)
 			}
 			continue
@@ -261,28 +191,81 @@ func (g *GitOps) CheckAndUpdateDeployments() error {
 			case deployment.Removed:
 				{
 					slog.Error("cannot remove controller deployment", "file", d.Filepath)
-					state.Failed++
+					g.metrics.State.Failed++
 				}
 			case deployment.Added:
 				{
 					slog.Error("cannot add controller deployment", "file", d.Filepath)
-					state.Failed++
+					g.metrics.State.Failed++
 				}
 			case deployment.Updated:
 				{
 					slog.Error("update controller deployment is not implemented yet", "file", d.Filepath)
 					// TODO: skip for docker desktop or non-docker use
-					// slog.Warn("scheduling controller deployment restart", "file", d.Filepath)
-					// _, err := d.Apply()
-					// if err != nil {
-					//     slog.Error("error updating controller deployment", "file", d.Filepath, "err", err)
-					//     state.Failed++
-					// }
-					// slog.Info("controller deployment scheduled, main process will exit soon")
 				}
 			}
 		}
 	}
 
-	return nil
+	return deployments, nil
+}
+
+func (g *GitOps) CheckAndUpdate() {
+	if g.isFirstCheck {
+		defer func() {
+			g.isFirstCheck = false
+		}()
+	}
+
+	hasChanges, err := g.repo.HasChanges()
+
+	if err != nil {
+		g.metrics.TrackCheckStatus("error")
+		slog.Error("error checking for git changes", "err", err)
+		return
+	} else {
+		g.metrics.TrackCheckStatus("success")
+		if hasChanges {
+			slog.Info("git changes detected")
+		} else if g.isFirstCheck {
+			slog.Info("first run, ensure all deployments are running")
+		} else {
+			slog.Info("no git changes detected")
+		}
+	}
+
+	newRetryDeployments := []*deployment.Deployment{}
+	defer func() {
+		// Save deployments that need to be retried
+		g.retryDeployments = newRetryDeployments
+		for _, d := range g.retryDeployments {
+			slog.Info("scheduling deployment for retry due to image pull backoff", "file", d.Filepath)
+		}
+
+		// Update metrics
+		g.metrics.UpdateMetrics()
+	}()
+
+	if hasChanges || g.isFirstCheck {
+		deployments, err := g.checkAndUpdateDeployments()
+		if err != nil {
+			slog.Error("error checking and updating deployments", "err", err)
+			g.metrics.TrackCheckStatus("error")
+			return
+		}
+
+		for _, d := range deployments {
+			if d.Error == deployment.ErrImagePullBackoff {
+				newRetryDeployments = append(newRetryDeployments, d)
+			}
+		}
+	} else {
+		for _, d := range g.retryDeployments {
+			g.metrics.State.Failed--
+			g.applyDeploymentChange(d)
+			if d.Error == deployment.ErrImagePullBackoff {
+				newRetryDeployments = append(newRetryDeployments, d)
+			}
+		}
+	}
 }
