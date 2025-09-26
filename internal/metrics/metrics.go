@@ -13,7 +13,7 @@ type Metrics struct {
 	deploymentTimestamp         *prometheus.GaugeVec
 	activeDeploymentsGauge      *prometheus.GaugeVec
 	deploymentOperationsCounter *prometheus.CounterVec
-	State                       *DeploymentState
+	state                       *DeploymentState
 }
 
 func NewMetrics() *Metrics {
@@ -63,7 +63,7 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"operation"},
 		),
-		State: newState(),
+		state: NewState(),
 	}
 
 	metrics.checkCounter.WithLabelValues("success").Add(0)
@@ -88,11 +88,6 @@ func NewMetrics() *Metrics {
 	return metrics
 }
 
-func (c *Metrics) TrackCheckStatus(status string) {
-	c.checkCounter.WithLabelValues(status).Inc()
-	c.checkTimestamp.WithLabelValues(status).SetToCurrentTime()
-}
-
 type DeploymentState struct {
 	Unchanged int
 	Started   int
@@ -103,7 +98,7 @@ type DeploymentState struct {
 	Ignored   int
 }
 
-func newState() *DeploymentState {
+func NewState() *DeploymentState {
 	return &DeploymentState{
 		Unchanged: 0,
 		Started:   0,
@@ -113,16 +108,6 @@ func newState() *DeploymentState {
 		Invalid:   0,
 		Ignored:   0,
 	}
-}
-
-func (s *DeploymentState) Reset() {
-	s.Unchanged = 0
-	s.Started = 0
-	s.Stopped = 0
-	s.Updated = 0
-	s.Failed = 0
-	s.Invalid = 0
-	s.Ignored = 0
 }
 
 func (s *DeploymentState) HasErrors() bool {
@@ -137,26 +122,49 @@ func (s *DeploymentState) CountRunning() int {
 	return s.Unchanged + s.Started + s.Updated
 }
 
-func (c *Metrics) UpdateMetrics() {
+func (s *DeploymentState) CountTotal() int {
+	return s.Unchanged + s.Started + s.Stopped + s.Updated + s.Failed + s.Invalid + s.Ignored
+}
+
+func (c *Metrics) TrackCheckStatus(status string) {
+	c.checkCounter.WithLabelValues(status).Inc()
+	c.checkTimestamp.WithLabelValues(status).SetToCurrentTime()
+}
+
+func (c *Metrics) TrackState(state *DeploymentState, replace bool) {
+	if replace {
+		c.state = state
+	} else {
+		c.state.Failed -= state.CountTotal()
+
+		c.state.Failed += state.Failed
+		c.state.Invalid += state.Invalid
+		c.state.Unchanged += state.Unchanged
+		c.state.Started += state.Started
+		c.state.Stopped += state.Stopped
+		c.state.Updated += state.Updated
+		c.state.Ignored += state.Ignored
+	}
+
 	// Timestamps
-	if c.State.HasErrors() {
+	if c.state.HasErrors() {
 		c.deploymentTimestamp.WithLabelValues("error").SetToCurrentTime()
-	} else if c.State.HasChanges() {
+	} else if c.state.HasChanges() {
 		c.deploymentTimestamp.WithLabelValues("success").SetToCurrentTime()
 	}
 
 	// Active states
-	c.activeDeploymentsGauge.WithLabelValues("running").Set(float64(c.State.CountRunning()))
-	c.activeDeploymentsGauge.WithLabelValues("failed").Set(float64(c.State.Failed))
-	c.activeDeploymentsGauge.WithLabelValues("invalid").Set(float64(c.State.Invalid))
-	c.activeDeploymentsGauge.WithLabelValues("ignored").Set(float64(c.State.Ignored))
+	c.activeDeploymentsGauge.WithLabelValues("running").Set(float64(c.state.CountRunning()))
+	c.activeDeploymentsGauge.WithLabelValues("failed").Set(float64(c.state.Failed))
+	c.activeDeploymentsGauge.WithLabelValues("invalid").Set(float64(c.state.Invalid))
+	c.activeDeploymentsGauge.WithLabelValues("ignored").Set(float64(c.state.Ignored))
 
 	// Operations
-	c.deploymentOperationsCounter.WithLabelValues("started").Add(float64(c.State.Started))
-	c.deploymentOperationsCounter.WithLabelValues("stopped").Add(float64(c.State.Stopped))
-	c.deploymentOperationsCounter.WithLabelValues("updated").Add(float64(c.State.Updated))
-	c.deploymentOperationsCounter.WithLabelValues("failed").Add(float64(c.State.Failed))
-	c.deploymentOperationsCounter.WithLabelValues("invalid").Add(float64(c.State.Invalid))
+	c.deploymentOperationsCounter.WithLabelValues("started").Add(float64(state.Started))
+	c.deploymentOperationsCounter.WithLabelValues("stopped").Add(float64(state.Stopped))
+	c.deploymentOperationsCounter.WithLabelValues("updated").Add(float64(state.Updated))
+	c.deploymentOperationsCounter.WithLabelValues("failed").Add(float64(state.Failed))
+	c.deploymentOperationsCounter.WithLabelValues("invalid").Add(float64(state.Invalid))
 }
 
 func (m *Metrics) GetMetricsHandler() http.Handler {
