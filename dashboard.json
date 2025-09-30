@@ -751,7 +751,6 @@
     }
   ],
   "schemaVersion": 41,
-  "tags": ["gitops", "prometheus", "loki"],
   "templating": {
     "list": [
       {
