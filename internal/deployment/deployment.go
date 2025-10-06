@@ -121,6 +121,9 @@ func (d *Deployment) IsController() bool {
 }
 
 func (d *Deployment) Apply() (bool, error) {
+	// Reset error state before applying changes
+	d.Error = nil
+
 	if !d.config.isValid {
 		d.Error = ErrInvalidComposeFile
 		return false, ErrInvalidComposeFile

@@ -240,10 +240,8 @@ func (g *GitOps) CheckAndUpdate() {
 		}
 	}()
 
-	// Track deployment operations
-	state := metrics.NewState()
-
 	if hasChanges || g.isFirstCheck {
+		state := metrics.NewState()
 		deployments, err := g.checkAndUpdateDeployments(state)
 		if err != nil {
 			slog.Error("error checking and updating deployments", "err", err)
@@ -258,6 +256,7 @@ func (g *GitOps) CheckAndUpdate() {
 			}
 		}
 	} else {
+		state := metrics.NewState()
 		for _, d := range g.retryDeployments {
 			g.applyDeploymentChange(d, state)
 			if d.Error == deployment.ErrImagePullBackoff {
