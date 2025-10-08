@@ -255,7 +255,14 @@ func (g *GitOps) CheckAndUpdate() {
 				newRetryDeployments = append(newRetryDeployments, d)
 			}
 		}
-	} else {
+
+		if state.HasChanges() {
+			slog.Info("deployment changes applied")
+		} else {
+			slog.Info("no deployment changes necessary")
+		}
+	} else if len(g.retryDeployments) > 0 {
+		slog.Info("retrying deployments that previously failed due to image pull backoff", "count", len(g.retryDeployments))
 		state := metrics.NewState()
 		for _, d := range g.retryDeployments {
 			g.applyDeploymentChange(d, state)

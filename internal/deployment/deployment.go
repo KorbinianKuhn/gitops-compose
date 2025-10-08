@@ -7,9 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sort"
 
 	"github.com/korbiniankuhn/gitops-compose/internal/compose"
 	"github.com/korbiniankuhn/gitops-compose/internal/docker"
+	"github.com/korbiniankuhn/gitops-compose/internal/utils"
 )
 
 var (
@@ -87,13 +89,23 @@ func (d *Deployment) LoadConfig() error {
 		}
 	}
 
-	hash := sha256.New()
-	hash.Write(projectYaml)
+	sortedProjectYaml, err := utils.SortYAML(projectYaml)
+	if err != nil {
+		slog.Warn("failed to sort compose project yaml, using unsorted version", "err", err)
+		sortedProjectYaml = projectYaml
+	}
 
+	hash := sha256.New()
+	hash.Write(sortedProjectYaml)
+
+	// Get and sort to ensure a deterministic order
 	watchFiles := d.compose.GetWatchFiles(project)
+	sort.Strings(watchFiles)
+
 	for _, filepath := range watchFiles {
 		f, err := os.Open(filepath)
 		if err != nil {
+			slog.Warn("failed to open watch file for hashing, skipping", "file", filepath, "err", err)
 			continue
 		}
 		io.Copy(hash, f)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/compose/v2/pkg/api"
 	"github.com/docker/compose/v2/pkg/compose"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type ComposeFile struct {
@@ -103,7 +104,11 @@ func (c ComposeFile) GetWatchFiles(project *types.Project) []string {
 			if err := yaml.Unmarshal(bytes, &cfg); err != nil {
 				slog.Warn("Failed to unmarshal x-gitops:", "compose", c.Filepath, "service", service.Name, "error", err)
 			}
-			watchFiles = append(watchFiles, cfg.Watch...)
+			for _, f := range cfg.Watch {
+				if !slices.Contains(watchFiles, f) {
+					watchFiles = append(watchFiles, f)
+				}
+			}
 		}
 	}
 
