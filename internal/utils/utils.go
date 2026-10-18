@@ -28,7 +28,7 @@ func sortYAMLNode(node *yaml.Node) {
 
 		sortMappingPairs(node)
 
-	case yaml.SequenceNode:
+	case yaml.DocumentNode, yaml.SequenceNode:
 		for _, child := range node.Content {
 			sortYAMLNode(child)
 		}
