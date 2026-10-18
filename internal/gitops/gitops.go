@@ -207,14 +207,19 @@ func (g *GitOps) checkAndUpdateDeployments(state *metrics.DeploymentState) ([]*d
 }
 
 func (g *GitOps) CheckAndUpdate() {
+	// Tracked once per check, set to error on any early return
+	checkStatus := "success"
+	defer func() {
+		g.metrics.TrackCheckStatus(checkStatus)
+	}()
+
 	hasChanges, err := g.repo.HasChanges()
 
 	if err != nil {
-		g.metrics.TrackCheckStatus("error")
+		checkStatus = "error"
 		slog.Error("error checking for git changes", "err", err)
 		return
 	} else {
-		g.metrics.TrackCheckStatus("success")
 		if hasChanges {
 			slog.Info("git changes detected")
 		} else if g.isFirstCheck {
@@ -238,7 +243,7 @@ func (g *GitOps) CheckAndUpdate() {
 		deployments, err := g.checkAndUpdateDeployments(state)
 		if err != nil {
 			slog.Error("error checking and updating deployments", "err", err)
-			g.metrics.TrackCheckStatus("error")
+			checkStatus = "error"
 			return
 		}
 		g.metrics.TrackState(state, true)
