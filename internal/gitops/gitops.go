@@ -133,13 +133,6 @@ func (g *GitOps) checkAndUpdateDeployments(state *metrics.DeploymentState) ([]*d
 		}
 	}
 
-	// Ensure docker login if credentials are set
-	_, err = g.docker.LoginIfCredentialsSet()
-	if err != nil {
-		slog.Error("error logging in to docker registry", "err", err)
-		return []*deployment.Deployment{}, err
-	}
-
 	// Stop removed deployments
 	for _, d := range deployments {
 		if d.IsIgnored() || d.IsController() {

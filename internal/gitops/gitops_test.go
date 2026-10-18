@@ -68,14 +68,14 @@ func scrapeCheckTotals(t *testing.T, m *metrics.Metrics) map[string]string {
 	return totals
 }
 
-func newTestGitOps(t *testing.T, deploy string) (*GitOps, *metrics.Metrics) {
+func newTestGitOps(t *testing.T, deploy string, registries ...docker.DockerRegistryCredentials) (*GitOps, *metrics.Metrics) {
 	t.Helper()
 	r, err := git.NewDeploymentRepo(deploy)
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := metrics.NewMetrics()
-	return NewGitOps(r, docker.NewDocker(nil), m), m
+	return NewGitOps(r, docker.NewDocker(registries), m), m
 }
 
 func TestCheckAndUpdateTracksSuccessOnce(t *testing.T) {
@@ -105,5 +105,30 @@ func TestCheckAndUpdateTracksFailedUpdateOnlyAsError(t *testing.T) {
 	totals := scrapeCheckTotals(t, m)
 	if totals["success"] != "0" || totals["error"] != "1" {
 		t.Fatalf("expected success=0 error=1, got %v", totals)
+	}
+}
+
+func TestCheckAndUpdateIgnoresUnreachableRegistry(t *testing.T) {
+	deploy, upstream := setupRepos(t)
+
+	// A new remote commit, so the check has to pull
+	commitFile(t, upstream, "remote.txt", "remote\n")
+	runGit(t, upstream, "push", "origin", "main")
+
+	// Credentials for a registry that can't be reached must not block the check
+	g, m := newTestGitOps(t, deploy, docker.DockerRegistryCredentials{
+		Url:      "registry.invalid",
+		Username: "user",
+		Password: "secret",
+	})
+
+	g.CheckAndUpdate()
+
+	totals := scrapeCheckTotals(t, m)
+	if totals["success"] != "1" || totals["error"] != "0" {
+		t.Fatalf("expected success=1 error=0, got %v", totals)
+	}
+	if _, err := os.Stat(filepath.Join(deploy, "remote.txt")); err != nil {
+		t.Fatalf("expected remote commit to be pulled: %v", err)
 	}
 }
