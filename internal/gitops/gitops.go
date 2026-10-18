@@ -96,6 +96,31 @@ func (g *GitOps) applyDeploymentChange(d *deployment.Deployment, state *metrics.
 	}
 }
 
+// Compose identifies containers by project name, so stacks sharing one would remove each other's containers
+func invalidateDuplicateProjectNames(deployments []*deployment.Deployment) {
+	byName := map[string][]*deployment.Deployment{}
+	for _, d := range deployments {
+		if d.State == deployment.Removed || d.ProjectName() == "" {
+			continue
+		}
+		byName[d.ProjectName()] = append(byName[d.ProjectName()], d)
+	}
+
+	for name, duplicates := range byName {
+		if len(duplicates) < 2 {
+			continue
+		}
+		files := []string{}
+		for _, d := range duplicates {
+			files = append(files, d.Filepath)
+		}
+		for _, d := range duplicates {
+			slog.Error("duplicate compose project name, set a unique name in the compose file", "project", name, "file", d.Filepath, "conflicts", files)
+			d.Invalidate()
+		}
+	}
+}
+
 func (g *GitOps) checkAndUpdateDeployments(state *metrics.DeploymentState) ([]*deployment.Deployment, error) {
 	// Get local and remote compose files
 	localComposeFiles, err := g.repo.GetLocalComposeFiles()
@@ -165,6 +190,8 @@ func (g *GitOps) checkAndUpdateDeployments(state *metrics.DeploymentState) ([]*d
 			}
 		}
 	}
+
+	invalidateDuplicateProjectNames(deployments)
 
 	// Update deployments (add, changed, unchanged)
 	for _, d := range deployments {

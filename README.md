@@ -26,6 +26,7 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
 - 📌 Pinned image versions are recommended. If you use `:latest`, somehow change compose.yml to trigger changes.
 - ⚠️ Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
 - 🏷️ Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`
+- 🪪 Unique project names: without `name:`, docker compose uses the folder name as project name (e.g. `my_app/production` and `other_app/production` are both `production`). Stacks sharing a project name would remove each other's containers, so they are all reported as invalid and not deployed. Setting `name:` in every compose file is recommended.
 - 🔧 When running with docker, paths likely mismatch between host and container, leading to deployment errors. It is therefore required to set an environment variable and ensure correct volume mounts (see configuration example below).
 - ♻️ Rolling Updates: Images are pulled before deployments are stopped (if pull fails, a repeated pull in the given check interval is executed until new changes in the repo are detected). However, deployment fails after image pull result in a failed deployment state.
 
