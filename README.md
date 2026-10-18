@@ -8,19 +8,21 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
 - ✏️ If changes exist:
   1. 📂 Get all `docker-compose.yml` files of the local git head
   2. 🌐 Get all `docker-compose.yml` files of the remote git head (stop here when something is wrong)
-  3. 🗑️ Stop all removed compose stacks
-  4. ⬇️ Pull changes
-  5. 🛠️ Detect changed deployments (added or modified)
-  6. 🚀 Apply changes (pull images, eventually stop running stacks, start stack)
+  3. 🔑 Log in to all configured docker registries (stop here when a login fails)
+  4. 🗑️ Stop all removed compose stacks
+  5. ⬇️ Pull changes
+  6. 🛠️ Detect changed deployments (added or modified)
+  7. 🚀 Apply changes (pull images, eventually stop running stacks, start stack)
      - ♻️ Repeatedly retry when image pull fails
 
-> GitopsCompose tries to exit early when errors occur (e.g. when the local repository is not clean). When it proceeds to step 3, errors are tracked but all operations continue (e.g. a failed stop of a removed deployment will not prevent other stacks to be updated).
+> GitopsCompose tries to exit early when errors occur (e.g. when the local repository is not clean). When it proceeds to step 4, errors are tracked but all operations continue (e.g. a failed stop of a removed deployment will not prevent other stacks to be updated).
 
 ### Limitations
 
 - 🌐 Initially clone repository with `HTTP` not `SSH`
 - 🔐 Clone repo with credentials in the url (if authentication is required)
 - 🏗️ No `build:` support: images must be prebuilt and pulled from a registry (e.g. built in CI). Compose stacks with a `build:` service are reported as invalid and not deployed (unless the stack is ignored with `gitops.ignore=true`).
+- 🔑 Registry logins are all-or-nothing: if the login to any configured registry fails (e.g. expired token, registry unreachable), no deployment changes are applied, including removals and the git pull, until the login works again. This keeps the local repository at the last commit that could be fully deployed.
 - 📌 Pinned image versions are recommended. If you use `:latest`, somehow change compose.yml to trigger changes.
 - ⚠️ Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
 - 🏷️ Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`
