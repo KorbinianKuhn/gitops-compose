@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -98,31 +97,21 @@ func main() {
 	// Initialise gitops
 	g := gitops.NewGitOps(r, d, m)
 
-	wg := sync.WaitGroup{}
-	check := make(chan struct{}, 1)
+	// Cancelled on termination signal
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	// Run gitops check on trigger
-	wg.Add(1)
-	go func() {
-		for range check {
-			g.CheckAndUpdate()
-		}
-		wg.Done()
-	}()
+	// Buffered so one webhook can be queued while a check is running.
+	// Never closed (the check loop exits via ctx), so late webhooks can't panic.
+	trigger := make(chan struct{}, 1)
 
-	// Run check on start
-	check <- struct{}{}
-
-	// Run gitops check on interval
+	// A nil channel blocks forever in select, which disables the interval
+	var tick <-chan time.Time
 	if c.CheckIntervalInSeconds > 0 {
 		slog.Info(fmt.Sprintf("starting gitops repeated pull (every %s seconds)", fmt.Sprint(c.CheckIntervalInSeconds)))
-		go func() {
-			ticker := time.NewTicker(time.Duration(c.CheckIntervalInSeconds) * time.Second)
-			defer ticker.Stop()
-			for range ticker.C {
-				check <- struct{}{}
-			}
-		}()
+		ticker := time.NewTicker(time.Duration(c.CheckIntervalInSeconds) * time.Second)
+		defer ticker.Stop()
+		tick = ticker.C
 	} else {
 		slog.Info("skipping gitops repeated pull (check interval is negative)")
 	}
@@ -131,7 +120,7 @@ func main() {
 	if c.WebhookEnabled {
 		http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 			select {
-			case check <- struct{}{}:
+			case trigger <- struct{}{}:
 				slog.Info("triggered check via webhook")
 			default:
 				slog.Info("ignored webhook as a check is already queued")
@@ -151,33 +140,32 @@ func main() {
 	s := http.Server{
 		Addr: ":2112",
 	}
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-
 		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			panicOnError("failed to start http server", err)
 		}
 	}()
 	slog.Info("http server started", "port", "2112")
 
-	// Wait for termination signal
-	osSignal := make(chan os.Signal, 1)
-	signal.Notify(osSignal, syscall.SIGINT, syscall.SIGTERM)
+	// Run checks on start, interval and webhook until a termination signal is received.
+	// A check in progress always completes before shutdown.
+	for ctx.Err() == nil {
+		g.CheckAndUpdate()
 
-	<-osSignal
+		select {
+		case <-ctx.Done():
+		case <-tick:
+		case <-trigger:
+		}
+	}
 	slog.Info("received termination signal, shutting down")
 
-	close(check)
-
 	// Stop http server
-	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := s.Shutdown(ctx); err != nil {
+	if err := s.Shutdown(shutdownCtx); err != nil {
 		panicOnError("failed to shutdown http server", err)
 	}
 
-	// Run until shutdown is complete
-	wg.Wait()
 	slog.Info("gitops compose gracefully stopped")
 }
