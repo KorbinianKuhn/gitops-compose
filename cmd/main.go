@@ -99,7 +99,7 @@ func main() {
 	g := gitops.NewGitOps(r, d, m)
 
 	wg := sync.WaitGroup{}
-	check := make(chan struct{})
+	check := make(chan struct{}, 1)
 
 	// Run gitops check on trigger
 	wg.Add(1)
@@ -134,7 +134,7 @@ func main() {
 			case check <- struct{}{}:
 				slog.Info("triggered check via webhook")
 			default:
-				slog.Info("ignored webhook as channel is already full")
+				slog.Info("ignored webhook as a check is already queued")
 			}
 			w.WriteHeader(http.StatusAccepted)
 		})
