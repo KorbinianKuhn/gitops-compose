@@ -38,6 +38,8 @@ type Deployment struct {
 	State    DeploymentState
 	config   DeploymentConfig
 	Error    error
+	// Whether LoadConfig ran before (even if it failed), used to detect updates
+	configLoaded bool
 }
 
 type DeploymentConfig struct {
@@ -62,6 +64,8 @@ func NewDeployment(docker *docker.Docker, filepath string) *Deployment {
 
 func (d *Deployment) LoadConfig() error {
 	oldConfig := d.config
+	wasLoaded := d.configLoaded
+	d.configLoaded = true
 
 	d.config = DeploymentConfig{
 		hash:             "",
@@ -127,10 +131,9 @@ func (d *Deployment) LoadConfig() error {
 	d.config.hash = hex.EncodeToString(hash.Sum(nil)[:])
 	d.config.isValid = true
 
-	if oldConfig != (DeploymentConfig{}) {
-		if oldConfig.hash != d.config.hash {
-			d.State = Updated
-		}
+	// An invalid previous config has an empty hash, so fixing a broken file counts as an update
+	if wasLoaded && oldConfig.hash != d.config.hash {
+		d.State = Updated
 	}
 
 	return nil

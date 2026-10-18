@@ -74,3 +74,51 @@ services:
 		t.Fatal("expected deployment to be ignored")
 	}
 }
+
+func writeCompose(t *testing.T, d *Deployment, composeYaml string) {
+	t.Helper()
+	if err := os.WriteFile(d.Filepath, []byte(composeYaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadConfigDetectsUpdates(t *testing.T) {
+	const valid = "services:\n  web:\n    image: nginx:1.27\n"
+	const changed = "services:\n  web:\n    image: nginx:1.28\n"
+	const invalid = "services:\n  web:\n    image: [\n"
+
+	tests := []struct {
+		name     string
+		before   string
+		after    string
+		expected DeploymentState
+	}{
+		{"unchanged", valid, valid, Unchanged},
+		{"changed", valid, changed, Updated},
+		{"invalid to valid", invalid, valid, Updated},
+		{"invalid to invalid", invalid, invalid, Unchanged},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newTestDeployment(t, tt.before)
+			d.LoadConfig()
+			writeCompose(t, d, tt.after)
+			d.LoadConfig()
+			if d.State != tt.expected {
+				t.Errorf("expected state %v, got %v", tt.expected, d.State)
+			}
+		})
+	}
+}
+
+func TestLoadConfigKeepsAddedState(t *testing.T) {
+	d := newTestDeployment(t, "services:\n  web:\n    image: nginx:1.27\n")
+	d.State = Added
+	if err := d.LoadConfig(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.State != Added {
+		t.Errorf("expected state Added, got %v", d.State)
+	}
+}
