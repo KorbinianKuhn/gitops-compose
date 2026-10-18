@@ -208,12 +208,6 @@ func (g *GitOps) checkAndUpdateDeployments(state *metrics.DeploymentState) ([]*d
 }
 
 func (g *GitOps) CheckAndUpdate() {
-	if g.isFirstCheck {
-		defer func() {
-			g.isFirstCheck = false
-		}()
-	}
-
 	hasChanges, err := g.repo.HasChanges()
 
 	if err != nil {
@@ -249,6 +243,9 @@ func (g *GitOps) CheckAndUpdate() {
 			return
 		}
 		g.metrics.TrackState(state, true)
+
+		// Only clear after a successful run, so a failed first check is retried
+		g.isFirstCheck = false
 
 		for _, d := range deployments {
 			if d.Error == deployment.ErrImagePullBackoff {
