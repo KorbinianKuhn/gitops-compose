@@ -53,12 +53,13 @@ func NewDeployment(docker *docker.Docker, filepath string) *Deployment {
 	c := compose.NewComposeFile(filepath)
 
 	return &Deployment{
-		docker:   *docker,
-		Filepath: filepath,
-		compose:  *c,
-		State:    Unchanged,
-		config:   DeploymentConfig{},
-		Error:    nil,
+		docker:       *docker,
+		Filepath:     filepath,
+		compose:      *c,
+		State:        Unchanged,
+		config:       DeploymentConfig{},
+		Error:        nil,
+		configLoaded: false,
 	}
 }
 
