@@ -114,13 +114,26 @@ func main() {
 	check <- struct{}{}
 
 	// Run gitops check on interval
+	stopTicker := make(chan struct{})
+	tickerWg := sync.WaitGroup{}
 	if c.CheckIntervalInSeconds > 0 {
 		slog.Info(fmt.Sprintf("starting gitops repeated pull (every %s seconds)", fmt.Sprint(c.CheckIntervalInSeconds)))
+		tickerWg.Add(1)
 		go func() {
+			defer tickerWg.Done()
 			ticker := time.NewTicker(time.Duration(c.CheckIntervalInSeconds) * time.Second)
 			defer ticker.Stop()
-			for range ticker.C {
-				check <- struct{}{}
+			for {
+				select {
+				case <-ticker.C:
+					select {
+					case check <- struct{}{}:
+					case <-stopTicker:
+						return
+					}
+				case <-stopTicker:
+					return
+				}
 			}
 		}()
 	} else {
@@ -168,14 +181,16 @@ func main() {
 	<-osSignal
 	slog.Info("received termination signal, shutting down")
 
-	close(check)
-
-	// Stop http server
+	// Stop all producers before closing the check channel (sending on a closed channel panics)
 	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
 	defer cancel()
 	if err := s.Shutdown(ctx); err != nil {
 		panicOnError("failed to shutdown http server", err)
 	}
+	close(stopTicker)
+	tickerWg.Wait()
+
+	close(check)
 
 	// Run until shutdown is complete
 	wg.Wait()
