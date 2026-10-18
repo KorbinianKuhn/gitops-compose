@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -231,15 +230,12 @@ func (r DeploymentRepo) VerifyGitCli() error {
 }
 
 func (r DeploymentRepo) Pull() error {
-	cmd := exec.Command("git", "pull")
+	// Only fast-forward, never create merge commits or rebase on the deploy host
+	cmd := exec.Command("git", "pull", "--ff-only")
 	cmd.Dir = r.path
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		outStr := strings.TrimSpace(string(output))
-		if outStr == "Already up to date." || outStr == "Already up-to-date." {
-			return nil
-		}
 		return fmt.Errorf("pull failed: %w %s", err, output)
 	}
 
