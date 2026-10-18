@@ -230,7 +230,6 @@ func (r DeploymentRepo) VerifyGitCli() error {
 	return nil
 }
 
-// TODO: Use go-git instead of exec when this issue is resolved (https://github.com/go-git/go-git/pull/1235)
 func (r DeploymentRepo) Pull() error {
 	cmd := exec.Command("git", "pull")
 	cmd.Dir = r.path

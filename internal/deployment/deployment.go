@@ -144,7 +144,6 @@ func (d *Deployment) Apply() (bool, error) {
 		return false, nil
 	}
 	if d.config.gitopsController {
-		// TODO: start temporary container that restarts the controller
 		return false, nil
 	}
 	switch d.State {
