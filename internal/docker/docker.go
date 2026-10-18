@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/jsonmessage"
 )
 
 type Docker struct {
@@ -116,14 +118,25 @@ func tryPullWithOptions(cli *client.Client, imageName string, pullOptions image.
 	}
 	defer reader.Close()
 
+	return readPullResponse(reader)
+}
+
+// The daemon may report pull failures inside the response stream instead of the HTTP status
+func readPullResponse(reader io.Reader) error {
 	decoder := json.NewDecoder(reader)
 
 	for {
-		var msg map[string]any
+		var msg jsonmessage.JSONMessage
 		if err := decoder.Decode(&msg); err == io.EOF {
 			break
 		} else if err != nil {
 			return fmt.Errorf("failed to decode docker pull response: %w", err)
+		}
+		if msg.Error != nil {
+			return msg.Error
+		}
+		if msg.ErrorMessage != "" {
+			return errors.New(msg.ErrorMessage)
 		}
 	}
 	return nil
