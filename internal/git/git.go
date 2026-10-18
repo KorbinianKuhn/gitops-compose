@@ -126,10 +126,8 @@ func (r DeploymentRepo) HasChanges() (bool, error) {
 		Force:      false,
 		Prune:      false,
 	})
-	if err != nil {
-		if err == gogit.NoErrAlreadyUpToDate {
-			return false, nil
-		}
+	// Already up to date only means nothing new was fetched, local and remote can still differ
+	if err != nil && err != gogit.NoErrAlreadyUpToDate {
 		return false, fmt.Errorf("fetch failed: %w", err)
 	}
 
