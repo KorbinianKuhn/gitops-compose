@@ -198,7 +198,6 @@ func (g *GitOps) checkAndUpdateDeployments(state *metrics.DeploymentState) ([]*d
 			case deployment.Updated:
 				{
 					slog.Error("update controller deployment is not implemented yet", "file", d.Filepath)
-					// TODO: skip for docker desktop or non-docker use
 				}
 			}
 		}
