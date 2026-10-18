@@ -20,6 +20,7 @@ GitopsCompose is a GitOps continuous delivery tool for single node Docker Compos
 
 - 🌐 Initially clone repository with `HTTP` not `SSH`
 - 🔐 Clone repo with credentials in the url (if authentication is required)
+- 🏗️ No `build:` support: images must be prebuilt and pulled from a registry (e.g. built in CI). Compose stacks with a `build:` service are reported as invalid and not deployed (unless the stack is ignored with `gitops.ignore=true`).
 - 📌 Pinned image versions are recommended. If you use `:latest`, somehow change compose.yml to trigger changes.
 - ⚠️ Errors during the removal of a compose stack could lead to an inconsistent state (containers might still run but the compose file is removed after git pull)
 - 🏷️ Fixed naming: GIT branch is fixed to "main". Compose files must be named `docker-compose.yml`

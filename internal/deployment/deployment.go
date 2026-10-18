@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/korbiniankuhn/gitops-compose/internal/compose"
 	"github.com/korbiniankuhn/gitops-compose/internal/docker"
@@ -18,6 +19,7 @@ var (
 	ErrInvalidComposeFile     = fmt.Errorf("invalid compose file")
 	ErrUnknownDeploymentState = fmt.Errorf("unknown deployment state")
 	ErrImagePullBackoff       = fmt.Errorf("image pull backoff")
+	ErrBuildNotSupported      = fmt.Errorf("build is not supported, use a prebuilt image")
 )
 
 type DeploymentState int
@@ -78,6 +80,7 @@ func (d *Deployment) LoadConfig() error {
 		return fmt.Errorf("failed to marshal compose project to YAML: %w", err)
 	}
 
+	buildServices := []string{}
 	for _, service := range project.Services {
 		for label, value := range service.Labels {
 			if label == "gitops.ignore" && value == "true" {
@@ -87,6 +90,15 @@ func (d *Deployment) LoadConfig() error {
 				d.config.gitopsController = true
 			}
 		}
+		if service.Build != nil {
+			buildServices = append(buildServices, service.Name)
+		}
+	}
+
+	// Images must be prebuilt and pulled from a registry (ignored stacks are never applied)
+	if len(buildServices) > 0 && !d.config.gitopsIgnore {
+		sort.Strings(buildServices)
+		return fmt.Errorf("%w (services: %s)", ErrBuildNotSupported, strings.Join(buildServices, ", "))
 	}
 
 	sortedProjectYaml, err := utils.SortYAML(projectYaml)
