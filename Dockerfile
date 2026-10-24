@@ -1,6 +1,6 @@
 # Build
 
-FROM golang:1.24.2-alpine AS builder
+FROM golang:1.26.10-alpine AS builder
 
 WORKDIR /app
 
@@ -13,8 +13,6 @@ RUN go build -o /build ./cmd/main.go
 # Runtime
 
 FROM alpine:latest
-
-RUN apk add --no-cache git
 
 WORKDIR /gitops-compose
 

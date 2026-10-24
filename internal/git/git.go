@@ -3,12 +3,12 @@ package git
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitHttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
@@ -18,7 +18,8 @@ var (
 )
 
 type DeploymentRepo struct {
-	auth *gitHttp.BasicAuth
+	// Interface type, so it stays nil (no auth) when WithAuth is not used
+	auth transport.AuthMethod
 	path string
 }
 
@@ -80,12 +81,7 @@ func (r DeploymentRepo) VerifyRemoteAccess() error {
 		return fmt.Errorf("get remote failed: %w", err)
 	}
 
-	listOptions := &gogit.ListOptions{}
-	if r.auth != nil {
-		listOptions.Auth = r.auth
-	}
-
-	_, err = remote.List(listOptions)
+	_, err = remote.List(&gogit.ListOptions{Auth: r.auth})
 	if err != nil {
 		return fmt.Errorf("remote is not working or auth failed: %w", err)
 	}
@@ -218,25 +214,28 @@ func (r DeploymentRepo) GetLocalComposeFiles() ([]string, error) {
 	return r.filterComposeFiles(*commit)
 }
 
-func (r DeploymentRepo) VerifyGitCli() error {
-	cmd := exec.Command("git", "ls-remote")
-	cmd.Dir = r.path
-
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git cli remote access failed: %w %s", err, out)
-	}
-	return nil
-}
-
 func (r DeploymentRepo) Pull() error {
-	// Only fast-forward, never create merge commits or rebase on the deploy host
-	cmd := exec.Command("git", "pull", "--ff-only")
-	cmd.Dir = r.path
-
-	output, err := cmd.CombinedOutput()
+	// Open the repository
+	repo, err := gogit.PlainOpen(r.path)
 	if err != nil {
-		return fmt.Errorf("pull failed: %w %s", err, output)
+		return fmt.Errorf("open repo failed: %w", err)
+	}
+
+	// Get the working tree
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return fmt.Errorf("get worktree failed: %w", err)
+	}
+
+	// Only fast-forward, never create merge commits or rebase on the deploy host
+	err = worktree.Pull(&gogit.PullOptions{
+		RemoteName:    "origin",
+		ReferenceName: plumbing.ReferenceName("refs/heads/main"),
+		SingleBranch:  true,
+		Auth:          r.auth,
+	})
+	if err != nil && err != gogit.NoErrAlreadyUpToDate {
+		return fmt.Errorf("pull failed: %w", err)
 	}
 
 	return nil
