@@ -63,7 +63,6 @@ func main() {
 
 	// Verify git remote access
 	panicOnError("failed to verify git remote access", r.VerifyRemoteAccess())
-	panicOnError("failed to verify git cli", r.VerifyGitCli())
 	slog.Info("git remote access verified")
 
 	// Verify docker socket connection
