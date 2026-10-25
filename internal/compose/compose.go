@@ -16,8 +16,8 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/flags"
-	"github.com/docker/compose/v2/pkg/api"
-	"github.com/docker/compose/v2/pkg/compose"
+	"github.com/docker/compose/v5/pkg/api"
+	"github.com/docker/compose/v5/pkg/compose"
 	"gopkg.in/yaml.v3"
 )
 
@@ -138,7 +138,7 @@ func (c ComposeFile) ListImages() ([]string, error) {
 	return images, nil
 }
 
-func getService() (api.Service, error) {
+func getService() (api.Compose, error) {
 	dockerCli, err := command.NewDockerCli(
 		command.WithOutputStream(io.Discard),
 		command.WithErrorStream(io.Discard),
@@ -153,7 +153,7 @@ func getService() (api.Service, error) {
 		return nil, fmt.Errorf("failed to initialize docker cli: %w", err)
 	}
 
-	return compose.NewComposeService(dockerCli), nil
+	return compose.NewComposeService(dockerCli, compose.WithPrompt(compose.AlwaysOkPrompt()))
 }
 
 func (c ComposeFile) IsRunning() (bool, error) {
@@ -253,7 +253,6 @@ func (c ComposeFile) Start() error {
 			Recreate:             api.RecreateForce,
 			RecreateDependencies: api.RecreateForce,
 			QuietPull:            true,
-			AssumeYes:            true,
 			Timeout:              func() *time.Duration { d := time.Duration(180) * time.Second; return &d }(),
 		},
 		Start: api.StartOptions{
