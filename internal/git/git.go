@@ -15,6 +15,7 @@ import (
 var (
 	ErrPathDoesNotExist = fmt.Errorf("path does not exist")
 	ErrHasLocalChanges  = fmt.Errorf("local changes detected")
+	ErrNonFastForward   = fmt.Errorf("local main is not an ancestor of origin/main, cannot fast-forward")
 )
 
 type DeploymentRepo struct {
@@ -214,7 +215,10 @@ func (r DeploymentRepo) GetLocalComposeFiles() ([]string, error) {
 	return r.filterComposeFiles(*commit)
 }
 
-func (r DeploymentRepo) Pull() error {
+// FastForward updates the local main branch to the origin/main fetched by HasChanges, without
+// fetching again: commits pushed after HasChanges were not analysed (e.g. added or removed
+// compose files) and are left for the next check.
+func (r DeploymentRepo) FastForward() error {
 	// Open the repository
 	repo, err := gogit.PlainOpen(r.path)
 	if err != nil {
@@ -227,15 +231,47 @@ func (r DeploymentRepo) Pull() error {
 		return fmt.Errorf("get worktree failed: %w", err)
 	}
 
+	localRef, err := repo.Reference(plumbing.ReferenceName("refs/heads/main"), true)
+	if err != nil {
+		return fmt.Errorf("get local ref failed: %w", err)
+	}
+
+	remoteRef, err := repo.Reference(plumbing.ReferenceName("refs/remotes/origin/main"), true)
+	if err != nil {
+		return fmt.Errorf("get remote ref failed: %w", err)
+	}
+
+	if localRef.Hash() == remoteRef.Hash() {
+		return nil
+	}
+
+	localCommit, err := repo.CommitObject(localRef.Hash())
+	if err != nil {
+		return fmt.Errorf("get local commit failed: %w", err)
+	}
+
+	remoteCommit, err := repo.CommitObject(remoteRef.Hash())
+	if err != nil {
+		return fmt.Errorf("get remote commit failed: %w", err)
+	}
+
 	// Only fast-forward, never create merge commits or rebase on the deploy host
-	err = worktree.Pull(&gogit.PullOptions{
-		RemoteName:    "origin",
-		ReferenceName: plumbing.ReferenceName("refs/heads/main"),
-		SingleBranch:  true,
-		Auth:          r.auth,
+	isFastForward, err := localCommit.IsAncestor(remoteCommit)
+	if err != nil {
+		return fmt.Errorf("check fast-forward failed: %w", err)
+	}
+	if !isFastForward {
+		return ErrNonFastForward
+	}
+
+	// Moves main to the remote commit and updates the tracked files, like go-git's pull does.
+	// Untracked and ignored files (e.g. .env, data) are kept.
+	err = worktree.Reset(&gogit.ResetOptions{
+		Commit: remoteRef.Hash(),
+		Mode:   gogit.MergeReset,
 	})
-	if err != nil && err != gogit.NoErrAlreadyUpToDate {
-		return fmt.Errorf("pull failed: %w", err)
+	if err != nil {
+		return fmt.Errorf("fast-forward failed: %w", err)
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,7 +100,7 @@ func TestHasChangesKeepsReportingUnpulledChanges(t *testing.T) {
 		t.Fatal("expected changes to be reported until they are pulled")
 	}
 
-	if err := r.Pull(); err != nil {
+	if err := r.FastForward(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -112,7 +113,7 @@ func TestHasChangesKeepsReportingUnpulledChanges(t *testing.T) {
 	}
 }
 
-func TestPullRefusesToMergeDivergedBranches(t *testing.T) {
+func TestFastForwardRefusesDivergedBranches(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -146,8 +147,11 @@ func TestPullRefusesToMergeDivergedBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Pull(); err == nil {
-		t.Fatal("expected pull of diverged branches to fail")
+	if _, err := r.HasChanges(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.FastForward(); !errors.Is(err, ErrNonFastForward) {
+		t.Fatalf("expected ErrNonFastForward for diverged branches, got %v", err)
 	}
 
 	if headAfter := gitOutput(t, deploy, "rev-parse", "HEAD"); headAfter != headBefore {
@@ -166,7 +170,7 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func TestPullKeepsUntrackedAndIgnoredFiles(t *testing.T) {
+func TestFastForwardKeepsUntrackedAndIgnoredFiles(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -204,11 +208,14 @@ func TestPullKeepsUntrackedAndIgnoredFiles(t *testing.T) {
 	runGit(t, upstream, "commit", "-m", "remove removed.yml")
 	runGit(t, upstream, "push", "origin", "main")
 
+	// Fetch like HasChanges does (which refuses to run with untracked files)
+	runGit(t, deploy, "fetch", "origin")
+
 	r, err := NewDeploymentRepo(deploy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Pull(); err != nil {
+	if err := r.FastForward(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,7 +246,7 @@ func TestPullKeepsUntrackedAndIgnoredFiles(t *testing.T) {
 	}
 }
 
-func TestPullIsNoopWhenUpToDate(t *testing.T) {
+func TestFastForwardIsNoopWhenUpToDate(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -258,7 +265,69 @@ func TestPullIsNoopWhenUpToDate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Pull(); err != nil {
-		t.Fatalf("expected pull without changes to succeed, got %v", err)
+	if err := r.FastForward(); err != nil {
+		t.Fatalf("expected fast-forward without changes to succeed, got %v", err)
+	}
+}
+
+func TestFastForwardIgnoresCommitsPushedAfterFetch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	upstream := filepath.Join(root, "upstream")
+	deploy := filepath.Join(root, "deploy")
+
+	runGit(t, root, "init", "--bare", origin)
+	runGit(t, root, "clone", origin, upstream)
+	commitFile(t, upstream, "README.md", "init\n")
+	runGit(t, root, "clone", origin, deploy)
+
+	r, err := NewDeploymentRepo(deploy)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Commit A is fetched and analysed by the check
+	if err := os.MkdirAll(filepath.Join(upstream, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, upstream, "a/docker-compose.yml", "services: {}\n")
+	commitA := gitOutput(t, upstream, "rev-parse", "HEAD")
+	if hasChanges, err := r.HasChanges(); err != nil || !hasChanges {
+		t.Fatalf("expected changes, got %v, %v", hasChanges, err)
+	}
+
+	// Commit B is pushed while the check is running (e.g. after stopping removed deployments)
+	if err := os.MkdirAll(filepath.Join(upstream, "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, upstream, "b/docker-compose.yml", "services: {}\n")
+	commitB := gitOutput(t, upstream, "rev-parse", "HEAD")
+
+	if err := r.FastForward(); err != nil {
+		t.Fatal(err)
+	}
+	if head := gitOutput(t, deploy, "rev-parse", "HEAD"); head != commitA {
+		t.Fatalf("expected HEAD at analysed commit %s, got %s", commitA, head)
+	}
+	if _, err := os.Stat(filepath.Join(deploy, "b", "docker-compose.yml")); !os.IsNotExist(err) {
+		t.Fatalf("expected compose file of commit B not to be checked out yet, got %v", err)
+	}
+
+	// The next check picks up commit B
+	if hasChanges, err := r.HasChanges(); err != nil || !hasChanges {
+		t.Fatalf("expected commit B as changes, got %v, %v", hasChanges, err)
+	}
+	if err := r.FastForward(); err != nil {
+		t.Fatal(err)
+	}
+	if head := gitOutput(t, deploy, "rev-parse", "HEAD"); head != commitB {
+		t.Fatalf("expected HEAD at commit %s, got %s", commitB, head)
+	}
+	if status := gitOutput(t, deploy, "status", "--porcelain"); status != "" {
+		t.Fatalf("expected a clean working tree, got %q", status)
 	}
 }
