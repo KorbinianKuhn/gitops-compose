@@ -1,6 +1,6 @@
 # Build
 
-FROM golang:1.26.10-alpine AS builder
+FROM golang:1.27.3-alpine3.24 AS builder
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ RUN go build -o /build ./cmd/main.go
 
 # Runtime
 
-FROM alpine:latest
+FROM alpine:3.24.3
 
 WORKDIR /gitops-compose
 

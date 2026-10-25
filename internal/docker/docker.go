@@ -2,17 +2,14 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/registry"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/jsonmessage"
+	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/pkg/authconfig"
+	"github.com/moby/moby/api/types/registry"
+	"github.com/moby/moby/client"
 )
 
 type Docker struct {
@@ -32,7 +29,7 @@ func NewDocker(registries []DockerRegistryCredentials) *Docker {
 }
 
 func (d Docker) getClient() (*client.Client, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
@@ -47,7 +44,7 @@ func (d Docker) VerifySocketConnection() error {
 	}
 	defer cli.Close()
 
-	_, err = cli.Ping(context.Background())
+	_, err = cli.Ping(context.Background(), client.PingOptions{})
 	if err != nil {
 		return fmt.Errorf("docker daemon is not reachable: %w", err)
 	}
@@ -62,12 +59,12 @@ func (d Docker) IsDockerDesktop() (bool, error) {
 	}
 	defer cli.Close()
 
-	info, err := cli.Info(context.Background())
+	result, err := cli.Info(context.Background(), client.InfoOptions{})
 	if err != nil {
 		return false, fmt.Errorf("failed to get docker info: %w", err)
 	}
 
-	if strings.Contains(strings.ToLower(info.OperatingSystem), "docker desktop") {
+	if strings.Contains(strings.ToLower(result.Info.OperatingSystem), "docker desktop") {
 		return true, nil
 	}
 
@@ -86,13 +83,13 @@ func (d Docker) LoginIfCredentialsSet() (bool, error) {
 	defer cli.Close()
 
 	for _, r := range d.registries {
-		authConfig := registry.AuthConfig{
+		loginOptions := client.RegistryLoginOptions{
 			Username:      r.Username,
 			Password:      r.Password,
 			ServerAddress: r.Url,
 		}
 
-		_, err = cli.RegistryLogin(context.Background(), authConfig)
+		_, err = cli.RegistryLogin(context.Background(), loginOptions)
 		if err != nil {
 			return false, fmt.Errorf("docker login failed: %w", err)
 		}
@@ -111,41 +108,20 @@ func filterRegistyCredentials(registries []DockerRegistryCredentials, imageName 
 	return matches
 }
 
-func tryPullWithOptions(cli *client.Client, imageName string, pullOptions image.PullOptions) error {
-	reader, err := cli.ImagePull(context.Background(), imageName, pullOptions)
+// Wait reports pull failures sent inside the response stream instead of the HTTP status
+func tryPullWithOptions(cli *client.Client, imageName string, pullOptions client.ImagePullOptions) error {
+	resp, err := cli.ImagePull(context.Background(), imageName, pullOptions)
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
 
-	return readPullResponse(reader)
-}
-
-// The daemon may report pull failures inside the response stream instead of the HTTP status
-func readPullResponse(reader io.Reader) error {
-	decoder := json.NewDecoder(reader)
-
-	for {
-		var msg jsonmessage.JSONMessage
-		if err := decoder.Decode(&msg); err == io.EOF {
-			break
-		} else if err != nil {
-			return fmt.Errorf("failed to decode docker pull response: %w", err)
-		}
-		if msg.Error != nil {
-			return msg.Error
-		}
-		if msg.ErrorMessage != "" {
-			return errors.New(msg.ErrorMessage)
-		}
-	}
-	return nil
+	return resp.Wait(context.Background())
 }
 
 func ImageExistsLocally(cli *client.Client, image string) (bool, error) {
 	_, err := cli.ImageInspect(context.TODO(), image)
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if cerrdefs.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
@@ -174,7 +150,7 @@ func (d Docker) Pull(imageName string) error {
 	slog.Info("pulling image", "name", imageName)
 	registries := filterRegistyCredentials(d.registries, imageName)
 	for _, r := range registries {
-		encodedAuthConfig, err := registry.EncodeAuthConfig(registry.AuthConfig{
+		encodedAuthConfig, err := authconfig.Encode(registry.AuthConfig{
 			Username:      r.Username,
 			Password:      r.Password,
 			ServerAddress: r.Url,
@@ -185,7 +161,7 @@ func (d Docker) Pull(imageName string) error {
 			continue
 		}
 
-		pullOptions := image.PullOptions{
+		pullOptions := client.ImagePullOptions{
 			RegistryAuth: encodedAuthConfig,
 		}
 
@@ -199,7 +175,7 @@ func (d Docker) Pull(imageName string) error {
 	}
 
 	// Try pulling without registry credentials
-	err = tryPullWithOptions(cli, imageName, image.PullOptions{})
+	err = tryPullWithOptions(cli, imageName, client.ImagePullOptions{})
 	if err != nil {
 		slog.Warn("failed to pull image without registry credentials", "error", err)
 	} else {
