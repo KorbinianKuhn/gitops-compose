@@ -150,8 +150,8 @@ func (g *GitOps) checkAndUpdateDeployments(state *metrics.DeploymentState) ([]*d
 		}
 	}
 
-	// Pull Git changes
-	if err := g.repo.Pull(); err != nil {
+	// Apply the fetched Git changes (only the analysed commit, later commits are left for the next check)
+	if err := g.repo.FastForward(); err != nil {
 		slog.Error("error pulling changes", "err", err)
 		return deployments, err
 	}
