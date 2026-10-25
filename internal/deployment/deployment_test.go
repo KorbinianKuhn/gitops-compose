@@ -122,3 +122,39 @@ func TestLoadConfigKeepsAddedState(t *testing.T) {
 		t.Errorf("expected state Added, got %v", d.State)
 	}
 }
+
+func TestProjectName(t *testing.T) {
+	// Defaults to the folder name of the compose file
+	d := newTestDeployment(t, "services:\n  web:\n    image: nginx:1.27\n")
+	if err := d.LoadConfig(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.ProjectName() != "app" {
+		t.Errorf("expected project name app, got %q", d.ProjectName())
+	}
+
+	// Explicit name wins
+	writeCompose(t, d, "name: my-app\nservices:\n  web:\n    image: nginx:1.27\n")
+	if err := d.LoadConfig(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.ProjectName() != "my-app" {
+		t.Errorf("expected project name my-app, got %q", d.ProjectName())
+	}
+
+	// Still known for stacks rejected after loading (e.g. build)
+	writeCompose(t, d, "services:\n  web:\n    build: .\n")
+	if err := d.LoadConfig(); err == nil {
+		t.Fatal("expected error for build service")
+	}
+	if d.ProjectName() != "app" {
+		t.Errorf("expected project name app for invalid stack, got %q", d.ProjectName())
+	}
+
+	// Unknown when the file can't be loaded
+	writeCompose(t, d, "services:\n  web:\n    image: [\n")
+	d.LoadConfig()
+	if d.ProjectName() != "" {
+		t.Errorf("expected empty project name, got %q", d.ProjectName())
+	}
+}

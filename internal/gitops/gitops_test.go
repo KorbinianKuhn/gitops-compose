@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/korbiniankuhn/gitops-compose/internal/deployment"
 	"github.com/korbiniankuhn/gitops-compose/internal/docker"
 	"github.com/korbiniankuhn/gitops-compose/internal/git"
 	"github.com/korbiniankuhn/gitops-compose/internal/metrics"
@@ -105,5 +106,53 @@ func TestCheckAndUpdateTracksFailedUpdateOnlyAsError(t *testing.T) {
 	totals := scrapeCheckTotals(t, m)
 	if totals["success"] != "0" || totals["error"] != "1" {
 		t.Fatalf("expected success=0 error=1, got %v", totals)
+	}
+}
+
+func newLoadedDeployment(t *testing.T, root, dir, composeYaml string) *deployment.Deployment {
+	t.Helper()
+	path := filepath.Join(root, dir)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(path, "docker-compose.yml")
+	if err := os.WriteFile(file, []byte(composeYaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := deployment.NewDeployment(docker.NewDocker(nil), file)
+	if err := d.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func TestInvalidateDuplicateProjectNames(t *testing.T) {
+	root := t.TempDir()
+	const compose = "services:\n  web:\n    image: nginx:1.27\n"
+
+	first := newLoadedDeployment(t, root, "my_app/production", compose)
+	second := newLoadedDeployment(t, root, "other_app/production", compose)
+	unique := newLoadedDeployment(t, root, "my_app/staging", compose)
+	named := newLoadedDeployment(t, root, "third_app/production", "name: third-app\n"+compose)
+	// Removed stacks are stopped before the pull and don't coexist with the others
+	removed := newLoadedDeployment(t, root, "old_app/staging", compose)
+	removed.State = deployment.Removed
+
+	invalidateDuplicateProjectNames([]*deployment.Deployment{first, second, unique, named, removed})
+
+	for _, tt := range []struct {
+		name  string
+		d     *deployment.Deployment
+		valid bool
+	}{
+		{"first duplicate", first, false},
+		{"second duplicate", second, false},
+		{"unique folder name", unique, true},
+		{"explicit name", named, true},
+		{"removed with same name as unique", removed, true},
+	} {
+		if tt.d.IsValid() != tt.valid {
+			t.Errorf("%s: expected valid=%v, got %v", tt.name, tt.valid, tt.d.IsValid())
+		}
 	}
 }

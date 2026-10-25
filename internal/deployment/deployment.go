@@ -47,6 +47,7 @@ type DeploymentConfig struct {
 	isValid          bool
 	gitopsIgnore     bool
 	gitopsController bool
+	projectName      string
 }
 
 func NewDeployment(docker *docker.Docker, filepath string) *Deployment {
@@ -73,12 +74,16 @@ func (d *Deployment) LoadConfig() error {
 		isValid:          false,
 		gitopsIgnore:     false,
 		gitopsController: false,
+		projectName:      "",
 	}
 
 	project, err := d.compose.LoadProject()
 	if err != nil {
 		return fmt.Errorf("failed to load project from compose file %s: %w", d.Filepath, err)
 	}
+
+	// Set before further validation, so invalid stacks still take part in duplicate name detection
+	d.config.projectName = project.Name
 
 	projectYaml, err := project.MarshalYAML()
 	if err != nil {
@@ -146,6 +151,20 @@ func (d *Deployment) IsIgnored() bool {
 
 func (d *Deployment) IsController() bool {
 	return d.config.gitopsController
+}
+
+func (d *Deployment) IsValid() bool {
+	return d.config.isValid
+}
+
+// Compose project name, empty if the compose file could not be loaded
+func (d *Deployment) ProjectName() string {
+	return d.config.projectName
+}
+
+// Marks the deployment as invalid, so Apply will not touch it
+func (d *Deployment) Invalidate() {
+	d.config.isValid = false
 }
 
 func (d *Deployment) Apply() (bool, error) {
